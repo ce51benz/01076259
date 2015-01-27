@@ -12,6 +12,7 @@ struct keyval{
 	guint count;
 };
 
+//Compare function use for sorting
 gint cmp_word_node(const struct word_node *a,const struct word_node *b){
 	int logicchk;
 	GString *aa,*bb;
@@ -23,8 +24,13 @@ gint cmp_word_node(const struct word_node *a,const struct word_node *b){
 	else return g_strcmp0((*a).doc_id,(*b).doc_id);	
 }
 
+void showlinklist(gchar *str,gint *user_data){
+	g_printf(":%s",str);
+}
 void showtable(guint *hashkey,struct keyval *val,gint *etc){
-	g_printf("%s:%d\n",(*val).str,(*val).count);
+	g_printf("%s:%d",(*val).str,(*val).count);
+	g_slist_foreach((*val).head,(GFunc)showlinklist,NULL);
+	g_printf("\n");
 }
 
 int main(int argc,char **argv){
@@ -72,6 +78,7 @@ if(j > 0){
 fclose(f);
 }
 
+
 g_printf("Before sort:\n");
 for(ind = 0;ind < (*wordlist).len;ind++){
 node = g_array_index(wordlist,struct word_node,ind);
@@ -88,33 +95,41 @@ g_printf("%s\t%s\n",(*watch).str,node.doc_id);
 }
 
 guint *hashkey;
-struct keyval *val;
+struct keyval *val = NULL;
 GHashTable *table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 for(ind = 0;ind < (*wordlist).len;ind++){
 	node = g_array_index(wordlist,struct word_node,ind);
 	watch = node.word;
 	hashkey = g_new(guint,1);
 	(*hashkey) = g_str_hash((*watch).str);
-	if((val = g_hash_table_lookup(table,hashkey)) == NULL){
+	//If preferred node is not exists create node and .... 
+	if(!g_hash_table_contains(table,hashkey)){
+	if(val != NULL){
+		if(!g_strcmp0((*watch).str,(*val).str))
+		goto warp;
+		}
 	val = g_new(struct keyval,1);
 	(*val).str = (*watch).str;
 	(*val).head = NULL;
+	(*val).head = g_slist_append((*val).head,node.doc_id);
 	(*val).count = 1;
-	g_hash_table_insert(table,hashkey,val);
+	g_hash_table_insert(table,hashkey,val);	
 	}
 	else{
-	//g_printf("DO THIS\n");
-	((*val).count)++;
-	g_hash_table_insert(table,hashkey,val);
-	}
+		//Update value only since it dynamically allocated
+		warp:
+		if(g_slist_find_custom((*val).head,node.doc_id,(GCompareFunc)g_strcmp0)==NULL){
+			((*val).count)++;
+			(*val).head = g_slist_append((*val).head,node.doc_id);
+		}
+	    }
 }
-g_printf("%d\n",g_hash_table_size(table) );
 //Show table data
 g_printf("Show data result:\n");
+g_printf("Number of word:%d\n",g_hash_table_size(table));
 g_hash_table_foreach(table,(GHFunc)showtable,NULL);
 
-
-
+//for(ind = 0;ind < (*wordlist).len;ind++)
 
 
 
@@ -131,6 +146,10 @@ g_string_free(watch,TRUE);
 //Finally remove array
 g_array_free(wordlist,TRUE);
 g_hash_table_destroy(table);
+
+//Clear key/data for each allocated
+//Clear linklist
+
 g_dir_close(dir);
 return 0;
 }
