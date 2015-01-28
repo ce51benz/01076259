@@ -1,6 +1,5 @@
 #include<glib.h>
 #include<stdio.h>
-
 struct word_node{
 	gchar *word;
 	gchar *doc_id;
@@ -57,22 +56,24 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 				g_string_append_c(temp,ch);
 			else if(!g_ascii_isalpha(ch) && j > 0){
 				temp = g_string_ascii_down(temp);
-				node.word = g_strndup(temp->str,temp->len);
+				node.word = g_strdup(temp->str);
 				g_string_erase(temp,0,-1);
 				number = g_strsplit_set(filename,".txt",-1);
-				node.doc_id = number[0]+(sizeof(gchar)*4);
+				node.doc_id = g_strdup(number[0]+(sizeof(gchar)*4));
 				g_array_append_val(wordlist,node);
-				j=0;		
+				j=0;
+				g_strfreev(number);
 			}
 			else j=0;
 		}	
 	if(j > 0){
 		temp = g_string_ascii_down(temp);
-		node.word = temp->str;
+		node.word = g_strdup(temp->str);
 		number = g_strsplit_set(filename,".txt",-1);
-		node.doc_id = number[0] + (sizeof(gchar)*4);
+		node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 		g_array_append_val(wordlist,node);
 		j=0;
+		g_strfreev(number);
 }
 	fclose(f);
 }
@@ -87,13 +88,14 @@ g_printf("%s\t%s\n",(*watch).str,node.doc_id);
 */
 g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
 
-
+/*
 g_printf("After sort:\n");
 for(ind =0;ind < (*wordlist).len;ind++){
 node = g_array_index(wordlist,struct word_node,ind);
 watch = node.word;
 g_printf("%s\t%s\n",watch,node.doc_id);
 }
+*/
 
 guint *hashkey;
 GArray *hashlist = g_array_new(TRUE,FALSE,sizeof(guint));
