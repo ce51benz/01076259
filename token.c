@@ -2,26 +2,22 @@
 #include<stdio.h>
 
 struct word_node{
-	GString *word;
+	gchar *word;
 	gchar *doc_id;
 };
 
 struct keyval{
 	gchar *str;
 	GSList *head;
-	//guint count;
 };
 
 //Compare function use for sorting
 gint cmp_word_node(const struct word_node *a,const struct word_node *b){
 	int logicchk;
-	GString *aa,*bb;
-	aa = (*a).word;
-	bb = (*b).word;
-	logicchk = g_strcmp0((*aa).str,(*bb).str);
+	logicchk = g_strcmp0(a->word,b->word);
 	if(logicchk > 0)return 1;
 	else if(logicchk < 0) return -1;
-	else return g_strcmp0((*a).doc_id,(*b).doc_id);	
+	else return atol(a->doc_id) > atol(b->doc_id);	
 }
 
 /*
@@ -40,22 +36,20 @@ void showtable(guint *hashkey,struct keyval *val,gint *etc){
 int main(int argc,char **argv){
 FILE *f;
 gchar ch;
-gchar *filename;
+gchar *filename,*watch;
 gchar **number;
-GString *temp,*watch;
+GString *temp;
 gint j=0,ind;
 struct word_node node;
 GArray *wordlist = g_array_new(TRUE,FALSE,sizeof(struct word_node));
 GDir *dir = g_dir_open(argv[1],0,NULL);
 g_chdir(argv[1]);
-
+temp = g_string_new(NULL);
 while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 	f = fopen(filename,"r");
-	g_printf("[%s]\n",filename);
 		while((ch = fgetc(f))!=EOF){
-			printf("%c",ch);
 			if(g_ascii_isalpha(ch) && j == 0){
-				temp = g_string_new(NULL);
+				//temp = g_string_new(NULL);
 				g_string_append_c(temp,ch);
 				j++;	
 			}
@@ -63,7 +57,8 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 				g_string_append_c(temp,ch);
 			else if(!g_ascii_isalpha(ch) && j > 0){
 				temp = g_string_ascii_down(temp);
-				node.word = temp;
+				node.word = g_strndup(temp->str,temp->len);
+				g_string_erase(temp,0,-1);
 				number = g_strsplit_set(filename,".txt",-1);
 				node.doc_id = number[0]+(sizeof(gchar)*4);
 				g_array_append_val(wordlist,node);
@@ -73,7 +68,7 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 		}	
 	if(j > 0){
 		temp = g_string_ascii_down(temp);
-		node.word = temp;
+		node.word = temp->str;
 		number = g_strsplit_set(filename,".txt",-1);
 		node.doc_id = number[0] + (sizeof(gchar)*4);
 		g_array_append_val(wordlist,node);
@@ -82,20 +77,22 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 	fclose(f);
 }
 
-
+/*
 g_printf("Before sort:\n");
 for(ind = 0;ind < (*wordlist).len;ind++){
 node = g_array_index(wordlist,struct word_node,ind);
 watch = node.word;
 g_printf("%s\t%s\n",(*watch).str,node.doc_id);
 }
+*/
 g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
+
 
 g_printf("After sort:\n");
 for(ind =0;ind < (*wordlist).len;ind++){
 node = g_array_index(wordlist,struct word_node,ind);
 watch = node.word;
-g_printf("%s\t%s\n",(*watch).str,node.doc_id);
+g_printf("%s\t%s\n",watch,node.doc_id);
 }
 
 guint *hashkey;
@@ -106,32 +103,31 @@ for(ind = 0;ind < (*wordlist).len;ind++){
 	node = g_array_index(wordlist,struct word_node,ind);
 	watch = node.word;
 	hashkey = g_new(guint,1);
-	(*hashkey) = g_str_hash((*watch).str);
+	(*hashkey) = g_str_hash(watch);
 	//If preferred node is not exists create node and .... 
 	if(!g_hash_table_contains(table,hashkey)){
 	if(val != NULL){
-		if(!g_strcmp0((*watch).str,(*val).str))
+		if(!g_strcmp0(watch,(*val).str))
 		goto warp;
 		}
 	g_array_append_val(hashlist,hashkey);
 	val = g_new(struct keyval,1);
-	(*val).str = (*watch).str;
+	(*val).str = watch;
 	(*val).head = NULL;
 	(*val).head = g_slist_append((*val).head,node.doc_id);
-	//(*val).count = 1;
 	g_hash_table_insert(table,hashkey,val);	
 	}
 	else{
 		//Update value only since it dynamically allocated
 		warp:
 		if(g_slist_find_custom((*val).head,node.doc_id,(GCompareFunc)g_strcmp0)==NULL){
-			//((*val).count)++;
 			(*val).head = g_slist_append((*val).head,node.doc_id);
 		}
 	    }
 }
 //Show table data
 g_printf("Show data result:\n");
+
 
 //Write data result to output
 g_chdir("..");
@@ -146,7 +142,6 @@ for(ind = 0;ind < (*hashlist).len;ind++){
 		g_fprintf(f,"%s",(*pt).data);
 		if((pt = g_slist_next(pt)) != NULL)
 			g_fprintf(f,",");
-		
 	}
 	g_fprintf(f,"\n");
 }
@@ -155,13 +150,11 @@ fclose(f);
 
 
 
-
-
 //Data deletion
 for(ind = 0;ind < (*wordlist).len;ind++){
 	node = g_array_index(wordlist,struct word_node,ind);
 	watch = node.word;
-	g_string_free(watch,TRUE);
+	//g_string_free(watch,TRUE);
 }
 //Finally remove array
 g_array_free(wordlist,TRUE);
