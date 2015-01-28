@@ -9,15 +9,19 @@ struct keyval{
 };
 
 //Compare function use for sorting
-gint cmp_word_node(const struct word_node *a,const struct word_node *b){
-	int logicchk;
-	logicchk = g_strcmp0(a->word,b->word);
-	if(logicchk > 0)return 1;
-	else if(logicchk < 0) return -1;
-	else return atol(a->doc_id) > atol(b->doc_id);	
+gint cmp_word_node(guint *a,guint *b){
+	guint aa,bb;
+	gchar *aaa,*bbb;
+	aa = *a;
+	bb = *b;
+	aaa = GUINT_TO_POINTER(aa);
+	bbb = GUINT_TO_POINTER(bb);
+	return g_strcmp0(aaa,bbb);
 }
 
-
+gint cmp_int(gpointer a,gpointer b){
+	return atol(a) - atol(b);
+}
 int main(int argc,char **argv){
 GSList *listpt = NULL;
 FILE *f;
@@ -48,6 +52,7 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 				if(!(val = g_hash_table_lookup(table,temp->str))){
 					val = g_new(struct keyval,1);
 					node.word = g_strdup(temp->str);
+
 					g_array_append_val(wordlist,node.word);
 					node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 					val->head = g_slist_append(listpt,node.doc_id);
@@ -91,7 +96,7 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 	fclose(f);
 }
 
-g_array_sort(wordlist,(GCompareFunc) g_strcmp0);
+g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
 
 /*
 g_printf("After sort:\n");
@@ -115,7 +120,8 @@ for(ind = 0;ind < (*wordlist).len;ind++){
 	watch = GUINT_TO_POINTER(g_array_index(wordlist,guint,ind));
 	val = g_hash_table_lookup(table,watch);
 	g_fprintf(f,"%s:%d:",watch,g_slist_length((*val).head));
-	pt = (*val).head;
+	pt = g_slist_sort(val->head,(GCompareFunc)cmp_int);
+	
 	while(pt != NULL){
 		g_fprintf(f,"%s",(*pt).data);
 		if((pt = g_slist_next(pt)) != NULL)
