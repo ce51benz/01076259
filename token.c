@@ -6,7 +6,6 @@ struct word_node{
 };
 
 struct keyval{
-	gchar *str;
 	GSList *head;
 };
 
@@ -19,18 +18,6 @@ gint cmp_word_node(const struct word_node *a,const struct word_node *b){
 	else return atol(a->doc_id) > atol(b->doc_id);	
 }
 
-/*
-void showtable(guint *hashkey,struct keyval *val,gint *etc){
-	GSList *pt;
-	g_printf("%s:%d:",(*val).str,(*val).count);
-	pt = (*val).head;
-	while(pt != NULL){
-		g_printf("%s",(*pt).data);
-		if((pt = g_slist_next(pt)) != NULL)
-			g_printf(",");	
-	} 
-	g_printf("\n");
-}*/
 
 int main(int argc,char **argv){
 FILE *f;
@@ -48,9 +35,8 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 	f = fopen(filename,"r");
 		while((ch = fgetc(f))!=EOF){
 			if(g_ascii_isalpha(ch) && j == 0){
-				//temp = g_string_new(NULL);
 				g_string_append_c(temp,ch);
-				j++;	
+				j++;
 			}
 			else if(g_ascii_isalpha(ch))
 				g_string_append_c(temp,ch);
@@ -97,27 +83,19 @@ g_printf("%s\t%s\n",watch,node.doc_id);
 }
 */
 
-guint *hashkey;
 GArray *hashlist = g_array_new(TRUE,FALSE,sizeof(guint));
 struct keyval *val = NULL;
 GHashTable *table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 for(ind = 0;ind < (*wordlist).len;ind++){
 	node = g_array_index(wordlist,struct word_node,ind);
 	watch = node.word;
-	hashkey = g_new(guint,1);
-	(*hashkey) = g_str_hash(watch);
 	//If preferred node is not exists create node and .... 
-	if(!g_hash_table_contains(table,hashkey)){
-	if(val != NULL){
-		if(!g_strcmp0(watch,(*val).str))
-		goto warp;
-		}
-	g_array_append_val(hashlist,hashkey);
+	if(!g_hash_table_contains(table,watch)){
+	g_array_append_val(hashlist,watch);
 	val = g_new(struct keyval,1);
-	(*val).str = watch;
 	(*val).head = NULL;
 	(*val).head = g_slist_append((*val).head,node.doc_id);
-	g_hash_table_insert(table,hashkey,val);	
+	g_hash_table_insert(table,watch,val);	
 	}
 	else{
 		//Update value only since it dynamically allocated
@@ -130,15 +108,15 @@ for(ind = 0;ind < (*wordlist).len;ind++){
 //Show table data
 g_printf("Show data result:\n");
 
-
 //Write data result to output
 g_chdir("..");
 f = fopen("outputtemp1","w");
 g_fprintf(f,"%d\n",g_hash_table_size(table));
 for(ind = 0;ind < (*hashlist).len;ind++){
 	GSList *pt;
-	val = g_hash_table_lookup(table,GUINT_TO_POINTER(g_array_index(hashlist,guint,ind)));
-	g_fprintf(f,"%s:%d:",(*val).str,g_slist_length((*val).head));
+	watch = GUINT_TO_POINTER(g_array_index(hashlist,guint,ind));
+	val = g_hash_table_lookup(table,watch);
+	g_fprintf(f,"%s:%d:",watch,g_slist_length((*val).head));
 	pt = (*val).head;
 	while(pt != NULL){
 		g_fprintf(f,"%s",(*pt).data);
