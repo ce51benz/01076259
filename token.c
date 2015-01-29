@@ -10,13 +10,7 @@ struct keyval{
 
 //Compare function use for sorting
 gint cmp_word_node(guint *a,guint *b){
-	//guint aa,bb;
-	gchar *aaa,*bbb;
-	//aa = *a;
-	//bb = *b;
-	aaa = GUINT_TO_POINTER(*a);
-	bbb = GUINT_TO_POINTER(*b);
-	return g_strcmp0(aaa,bbb);
+	return g_strcmp0(GUINT_TO_POINTER(*a),GUINT_TO_POINTER(*b));
 }
 
 gint cmp_int(gpointer a,gpointer b){
@@ -39,6 +33,8 @@ g_chdir(argv[1]);
 temp = g_string_new(NULL);
 while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 	f = fopen(filename,"r");
+	number = g_strsplit_set(filename,".txt",-1);	
+	node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 		while((ch = fgetc(f))!=EOF){
 			if(g_ascii_isalpha(ch) && j == 0){
 				g_string_append_c(temp,ch);
@@ -48,51 +44,43 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 				g_string_append_c(temp,ch);
 			else if(!g_ascii_isalpha(ch) && j > 0){
 				temp = g_string_ascii_down(temp);
-				number = g_strsplit_set(filename,".txt",-1);
 				if(!(val = g_hash_table_lookup(table,temp->str))){
 					val = g_new(struct keyval,1);
 					node.word = g_strdup(temp->str);
-
 					g_array_append_val(wordlist,node.word);
-					node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 					val->head = g_slist_append(listpt,node.doc_id);
 					g_hash_table_insert(table,node.word,val); 
 				}
 				else{
 					if(!g_slist_find_custom(val->head,(number[0]+(sizeof(gchar)*4)),(GCompareFunc)g_strcmp0)){
-						node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 						val->head = g_slist_prepend(val->head,node.doc_id);
 					}
 				}
 
 				g_string_erase(temp,0,-1);
 				j=0;
-				g_strfreev(number);
 			}
 		}	
 
 	if(j > 0){
 				temp = g_string_ascii_down(temp);
-				number = g_strsplit_set(filename,".txt",-1);
 				if(!(val = g_hash_table_lookup(table,temp->str))){
 					val = g_new(struct keyval,1);
 					node.word = g_strdup(temp->str);
 					g_array_append_val(wordlist,node.word);
-					node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 					val->head = g_slist_append(listpt,node.doc_id);
 					g_hash_table_insert(table,node.word,val); 
 
 				}
 				else{
 					if(!g_slist_find_custom(val->head,(number[0]+(sizeof(gchar)*4)),(GCompareFunc)g_strcmp0)){
-						node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 						val->head = g_slist_prepend(val->head,node.doc_id);
 					}
 				}
 		j=0;
-		g_strfreev(number);
 }
 	fclose(f);
+	g_strfreev(number);
 }
 
 g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
