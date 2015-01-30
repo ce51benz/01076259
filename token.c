@@ -6,6 +6,7 @@ struct word_node{
 };
 struct keyval{
 	GSList *head;
+	gchar* docltread;
 };
 
 //Compare function use for sorting
@@ -19,6 +20,7 @@ gint cmp_int(gpointer a,gpointer b){
 int main(int argc,char **argv){
 GSList *listpt = NULL;
 FILE *f;
+
 gchar ch;
 gchar *filename,*watch;
 gchar **number;
@@ -48,11 +50,13 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 					val = g_new(struct keyval,1);
 					node.word = g_strdup(temp->str);
 					g_array_append_val(wordlist,node.word);
+					val->docltread = node.doc_id;
 					val->head = g_slist_append(listpt,node.doc_id);
 					g_hash_table_insert(table,node.word,val); 
 				}
 				else{
-					if(!g_slist_find_custom(val->head,(number[0]+(sizeof(gchar)*4)),(GCompareFunc)g_strcmp0)){
+					if(!(val->docltread == node.doc_id)){
+						val->docltread = node.doc_id;
 						val->head = g_slist_prepend(val->head,node.doc_id);
 					}
 				}
@@ -66,6 +70,7 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 				temp = g_string_ascii_down(temp);
 				if(!(val = g_hash_table_lookup(table,temp->str))){
 					val = g_new(struct keyval,1);
+					val->docltread = node.doc_id; 
 					node.word = g_strdup(temp->str);
 					g_array_append_val(wordlist,node.word);
 					val->head = g_slist_append(listpt,node.doc_id);
@@ -73,7 +78,8 @@ while((filename = GINT_TO_POINTER(g_dir_read_name(dir))) !=NULL){
 
 				}
 				else{
-					if(!g_slist_find_custom(val->head,(number[0]+(sizeof(gchar)*4)),(GCompareFunc)g_strcmp0)){
+					if(!(val->docltread == node.doc_id)){
+						val->docltread = node.doc_id;	
 						val->head = g_slist_prepend(val->head,node.doc_id);
 					}
 				}
