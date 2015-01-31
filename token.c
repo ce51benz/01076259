@@ -30,6 +30,16 @@ gint cmp_int(gpointer a,gpointer b){
 	return atol(a) - atol(b);
 }
 
+void *sortlist(void *index){
+long idx = (long)index;
+long count;
+for(count = ((wordlist->len)/4)*idx;count < ((wordlist->len)/4)*(idx+1);count++){
+gchar *watch = GUINT_TO_POINTER(g_array_index(wordlist,long,count)); 
+struct keyval *val2 = g_hash_table_lookup(table,watch);
+val2->head = g_slist_sort(val2->head,(GCompareFunc)cmp_int);
+}
+
+}
 void *tokenized_word(void *thnum){
 gboolean deleteflag;
 long threadnum = (long)thnum;
@@ -67,22 +77,25 @@ FILE *f;
 				//if((val = g_hash_table_lookup(table,temp->str))!=NULL){pthread_mutex_unlock(&tablelc);goto warp;}
 				g_array_append_val(wordlist,node.word);
 				g_hash_table_insert(table,node.word,newval);
+				pthread_mutex_unlock(&tablelc);
 				}
 			else{
-							//val = g_hash_table_lookup(table,temp->str);
-				//pthread_mutex_lock(&wordlistlc);
+				pthread_mutex_unlock(&tablelc);
+				g_slist_free(newval->head);
+				g_free(node.word);
+				g_free(newval);
+				pthread_mutex_lock(&wordlistlc);
 				if(!(val->thr[threadnum] == node.doc_id)){
 					val->thr[threadnum] = node.doc_id;
 					val->head = g_slist_prepend(val->head,node.doc_id);
 				}
-			      	//pthread_mutex_unlock(&wordlistlc);
+			      	pthread_mutex_unlock(&wordlistlc);
 			}
-			pthread_mutex_unlock(&tablelc);
-			if(val!=NULL){
+			/*if(val!=NULL){
 			g_slist_free(newval->head);
 			g_free(node.word);
 			g_free(newval);
-			}
+			}*/
 			g_string_erase(temp,0,-1);
 		}
 	
@@ -125,8 +138,14 @@ pthread_join(t3,NULL);
 
 
 g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
+pthread_create(&t1,&a1,sortlist,(void*)oh);
+pthread_create(&t2,&a2,sortlist,(void*)one);
+pthread_create(&t3,&a3,sortlist,(void*)two);
+sortlist((void*)three);
 
-
+pthread_join(t1,NULL);
+pthread_join(t2,NULL);
+pthread_join(t3,NULL);
 //Show table data
 
 GSList *pt;
@@ -139,8 +158,7 @@ for(ind = 0;ind < wordlist->len;ind++){
 	watch = GUINT_TO_POINTER(g_array_index(wordlist,long,ind));
 	val1 = g_hash_table_lookup(table,watch);
 	g_fprintf(ff,"%s:%d:",watch,g_slist_length(val1->head));
-	pt = g_slist_sort(val1->head,(GCompareFunc)cmp_int);
-	
+	pt = val1->head;
 	while(pt != NULL){
 		g_fprintf(ff,"%s",pt->data);
 		if((pt = g_slist_next(pt)) != NULL)
