@@ -85,12 +85,13 @@ else{
 
 }
 void *tokenized_word(void *thnum){
-long threadnum = (long)thnum;
+long threadnum = (long)thnum;int n;
 struct word_node node;
 char ch;
-gchar *filename;
+gchar *filename,*watchtemp;
 gchar **number;
-struct keyval *newval,*val; 
+GPtrArray *locktemp = NULL;
+struct keyval *val;
 GString *temp = g_string_new(NULL);
 FILE *f;
 	while(1){
@@ -103,37 +104,64 @@ FILE *f;
 		f = fopen(filename,"r");
 		number = g_strsplit_set(filename,".txt",-1);	
 		node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
-	
-		while((ch = fgetc(f))!=EOF){
-		if(g_ascii_isalpha(ch)){
+		
+		while((ch = fgetc(f))!=EOF || locktemp != NULL){
+		if((ch>64&&ch<91)||(ch>96&&ch<123)){
 			g_string_append_c(temp,ch);
 		}
-		else if(temp->len >0){
+		else if(temp->len >0 || ch == EOF){
 			temp = g_string_ascii_down(temp);
-			newval = g_new(struct keyval,1);
-			newval->thr[threadnum] = node.doc_id;
-			newval->head = g_slist_prepend(listpt,node.doc_id);
-			node.word = g_strdup(temp->str);
-			pthread_mutex_lock(&tablelc);
-			if(!(val = g_hash_table_lookup(table,temp->str))){
-				//if((val = g_hash_table_lookup(table,temp->str))!=NULL){pthread_mutex_unlock(&tablelc);goto warp;}
-				g_array_append_val(wordlist,node.word);
-				g_hash_table_insert(table,node.word,newval);
-				pthread_mutex_unlock(&tablelc);
-				}
-			else{
-				pthread_mutex_unlock(&tablelc);
-				g_slist_free(newval->head);
-				g_free(node.word);
-				g_free(newval);
-				pthread_mutex_lock(&wordlistlc);
-				if(!(val->thr[threadnum] == node.doc_id)){
+			if(pthread_mutex_trylock(&tablelc) != 0)goto locktemppt;
+			if(locktemp!=NULL){
+				for(n = 0;n<locktemp->len;n++){
+					watchtemp = g_ptr_array_index(locktemp,n);
+					if(!(val = g_hash_table_lookup(table,watchtemp))){
+						val = g_new(struct keyval,1);
+						val->thr[threadnum] = node.doc_id;
+						val->head = g_slist_prepend(listpt,node.doc_id);
+						node.word = g_strdup(watchtemp);
+						g_array_append_val(wordlist,node.word);
+						g_hash_table_insert(table,node.word,val);
+						g_free(watchtemp);
+					}
+					else{
+						g_free(watchtemp);
+						if(!(val->thr[threadnum] == node.doc_id)){
+							val->thr[threadnum] = node.doc_id;
+							val->head = g_slist_prepend(val->head,node.doc_id);
+					    	}
+					    }
+				}//END LOOP TEMP
+			g_ptr_array_free(locktemp,TRUE);
+			locktemp = NULL;
+			}//END IF
+				if(temp->len > 0)
+				if(!(val = g_hash_table_lookup(table,temp->str))){
+					val = g_new(struct keyval,1);
 					val->thr[threadnum] = node.doc_id;
-					val->head = g_slist_prepend(val->head,node.doc_id);
+					val->head = g_slist_prepend(listpt,node.doc_id);
+					node.word = g_strdup(temp->str);
+					g_array_append_val(wordlist,node.word);
+					g_hash_table_insert(table,node.word,val);
 				}
-			      	pthread_mutex_unlock(&wordlistlc);
-			}
+				else{
+					if(!(val->thr[threadnum] == node.doc_id)){
+						val->thr[threadnum] = node.doc_id;
+						val->head = g_slist_prepend(val->head,node.doc_id);
+					}
+				    }			
+			pthread_mutex_unlock(&tablelc);
 			g_string_erase(temp,0,-1);
+		}
+		continue;
+		locktemppt:
+		if(!locktemp){
+		locktemp = g_ptr_array_new();
+		}
+		if(temp->len >0){
+		node.word = g_strdup(temp->str);
+		g_ptr_array_add(locktemp,node.word);	
+		g_string_erase(temp,0,-1);
 		}
 	}
 	fclose(f);
@@ -172,38 +200,41 @@ pthread_join(t2,NULL);
 pthread_join(t3,NULL);
 g_array_sort(wordlist,(GCompareFunc) cmp_word_node);
 
+
 g_chdir("..");
 ff = fopen("outputtemp1","w");
 g_fprintf(ff,"%d\n",wordlist->len);
+
 
 pthread_create(&t1,&a1,sortlist,(void*)three);
 pthread_create(&t2,&a2,sortlist,(void*)one);
 pthread_create(&t3,&a3,sortlist,(void*)two);
 sortlist((void*)oh);
+
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
 //Show table data
-
+/*struct keyval *val1;
 GSList *pt;
-struct keyval *val1;
 //Write data result to output
-/*g_chdir("..");
+
+g_chdir("..");
 ff = fopen("outputtemp1","w");
 g_fprintf(ff,"%d\n",wordlist->len);
-for(ind = (wordlist->len)/4;ind < wordlist->len;ind++){
+for(ind = 0;ind < wordlist->len;ind++){
 	watch = GUINT_TO_POINTER(g_array_index(wordlist,long,ind));
 	val1 = g_hash_table_lookup(table,watch);
 	g_fprintf(ff,"%s:%d:",watch,g_slist_length(val1->head));
-	pt = val1->head;
+	pt = g_slist_sort(val1->head,(GCompareFunc)cmp_int);
 	while(pt != NULL){
 		g_fprintf(ff,"%s",pt->data);
 		if((pt = g_slist_next(pt)) != NULL)
 			g_fprintf(ff,",");
 	}
 	g_fprintf(ff,"\n");
-}*/
-
+}
+*/
 fclose(ff);
 
 //Finally remove array
