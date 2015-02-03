@@ -93,6 +93,7 @@ gchar **number;
 GPtrArray *locktemp = NULL;
 struct keyval *val;
 GString *temp = g_string_new(NULL);
+locktemp = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
 FILE *f;
 	while(1){
 		pthread_mutex_lock(&dirlc);
@@ -105,14 +106,14 @@ FILE *f;
 		number = g_strsplit_set(filename,".txt",-1);	
 		node.doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
 		
-		while((ch = fgetc(f))!=EOF || locktemp != NULL){
+		while((ch = fgetc(f))!=EOF || locktemp->len != 0){
 		if((ch>64&&ch<91)||(ch>96&&ch<123)){
 			g_string_append_c(temp,ch);
 		}
 		else if(temp->len >0 || ch == EOF){
 			temp = g_string_ascii_down(temp);
 			if(pthread_mutex_trylock(&tablelc) != 0)goto locktemppt;
-			if(locktemp!=NULL){
+			if(locktemp->len != 0){
 				for(n = 0;n<locktemp->len;n++){
 					watchtemp = g_ptr_array_index(locktemp,n);
 					if(!(val = g_hash_table_lookup(table,watchtemp))){
@@ -122,18 +123,16 @@ FILE *f;
 						node.word = g_strdup(watchtemp);
 						g_array_append_val(wordlist,node.word);
 						g_hash_table_insert(table,node.word,val);
-						g_free(watchtemp);
 					}
 					else{
-						g_free(watchtemp);
 						if(!(val->thr[threadnum] == node.doc_id)){
 							val->thr[threadnum] = node.doc_id;
 							val->head = g_slist_prepend(val->head,node.doc_id);
 					    	}
 					    }
 				}//END LOOP TEMP
-			g_ptr_array_free(locktemp,TRUE);
-			locktemp = NULL;
+			 g_ptr_array_remove_range(locktemp,0,locktemp->len);
+			//locktemp = NULL;
 			}//END IF
 				if(temp->len > 0)
 				if(!(val = g_hash_table_lookup(table,temp->str))){
@@ -155,9 +154,6 @@ FILE *f;
 		}
 		continue;
 		locktemppt:
-		if(!locktemp){
-		locktemp = g_ptr_array_new();
-		}
 		if(temp->len >0){
 		node.word = g_strdup(temp->str);
 		g_ptr_array_add(locktemp,node.word);	
