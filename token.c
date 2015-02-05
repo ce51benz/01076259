@@ -1,7 +1,6 @@
 #include<glib.h>
 #include<stdio.h>
 #include<pthread.h>
-
 GHashTable *table;
 GPtrArray *wordlist;
 
@@ -52,11 +51,11 @@ else{
 			g_fprintf(ff,"%s:%d:",watch,g_slist_length(head[0]));
 			ptr = g_slist_sort(head[0],(GCompareFunc)cmp_int);
 			while(ptr !=NULL){
-				g_fprintf(ff,"%s",ptr->data);
+				fputs(ptr->data,ff);
 					if((ptr = ptr->next) != NULL)
-						g_fprintf(ff,",");
+						fputc(',',ff);
 			}
-			g_fprintf(ff,"\n");
+			fputc('\n',ff);
 	}
 	
 	for(count = upper;count <wordlist->len;count++){		
@@ -65,11 +64,11 @@ else{
 		g_fprintf(ff,"%s:%d:",watch,g_slist_length(head[0]));
 		ptr = head[0];
 		while(ptr != NULL){
-			g_fprintf(ff,"%s",ptr->data);
+			fputs(ptr->data,ff);
 			if((ptr = ptr->next) != NULL)
-				g_fprintf(ff,",");
+				fputc(',',ff);
 		}
-		g_fprintf(ff,"\n");
+		fputc('\n',ff);
 	}
 }
 
@@ -88,14 +87,14 @@ FILE *f;
 	while(1){
 		pthread_mutex_lock(&dirlc);
 		if((filename = GUINT_TO_POINTER(g_dir_read_name(dir))) == NULL){
-		pthread_mutex_unlock(&dirlc);
-		break;
+			pthread_mutex_unlock(&dirlc);
+			break;
 		}
 		pthread_mutex_unlock(&dirlc);
 		f = fopen(filename,"r");
 		number = g_strsplit_set(filename,".txt",-1);	
 		doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
-		while((ch = fgetc(f))!=EOF || locktemp->len != 0){
+		while((ch = fgetc(f)) != EOF|| locktemp->len > 0){
 		if((ch>64&&ch<91)||(ch>96&&ch<123)){
 			g_string_append_c(temp,ch);
 		}
@@ -110,12 +109,14 @@ FILE *f;
 						head[threadnum]=g_slist_prepend(NULL,doc_id);
 						g_hash_table_insert(table,g_strdup(locktemp->pdata[n]),head);
 					}
-					else if(!head[threadnum]){
+					else{
+						if(!head[threadnum]){
 							head[threadnum] = g_slist_prepend(NULL,doc_id);
-						}
-					else if(!(head[threadnum]->data == doc_id)){
+							}
+						else if(!(head[threadnum]->data == doc_id)){
 							head[threadnum] = g_slist_prepend(head[threadnum],doc_id);
-						}		    
+							}
+					   }		    
 			}//END LOOP TEMP			 
 			g_ptr_array_remove_range(locktemp,0,locktemp->len);
 			}//END IF
@@ -132,8 +133,7 @@ FILE *f;
 						}
 					else if(!(head[threadnum]->data == doc_id)){
 							head[threadnum] = g_slist_prepend(head[threadnum],doc_id);
-						}
-				 	   
+						} 	   
 				}	
 			pthread_mutex_unlock(&tablelc);
 			g_string_erase(temp,0,-1);
@@ -175,7 +175,6 @@ pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
 pthread_mutex_init(&dirlc,NULL);
 gint ind;
-gchar *watch;
 table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
 g_chdir(argv[1]);
@@ -201,7 +200,6 @@ wordlist = g_ptr_array_sized_new(g_hash_table_size(table));
 pthread_create(&t1,&a1,doconcatlist,NULL);
 docopytable(NULL);
 pthread_join(t1,NULL);
-
 
 g_chdir("..");
 ff = fopen("outputtemp1","w");
