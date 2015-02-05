@@ -11,6 +11,12 @@ pthread_mutex_t wordlistlc;
 pthread_mutex_t dirlc;
 
 
+struct keyval{
+	gchar *thr[4];
+	GSList *head;
+};
+
+
 //Compare function use for sorting
 gint cmp_word_node(long *a,long *b){
 	return g_strcmp0(GUINT_TO_POINTER(*a),GUINT_TO_POINTER(*b));
@@ -25,31 +31,29 @@ long idx = (long)index;
 long count;
 long upper = wordlist->len/4;
 gchar *watch;
+struct keyval *val;
 if(idx != 0 && idx != 3){
 	int uppersum = upper * (idx+1);
-	GSList **head;
 	for(count = (upper*idx);count < uppersum;count++){
 			watch = wordlist->pdata[count];
-			head = g_hash_table_lookup(table,watch);
-			head[0] = g_slist_sort(head[0],(GCompareFunc)cmp_int);
+			val = g_hash_table_lookup(table,watch);
+			val->head = g_slist_sort(val->head,(GCompareFunc)cmp_int);
 		}
 	}
 else if(idx == 3){
-	GSList **head;
 	for(count = upper*3;count<wordlist->len;count++){
 		watch = wordlist->pdata[count];
-		head = g_hash_table_lookup(table,watch);
-		head[0] = g_slist_sort(head[0],(GCompareFunc)cmp_int);
+		val = g_hash_table_lookup(table,watch);
+		val->head = g_slist_sort(val->head,(GCompareFunc)cmp_int);
 	}
 }
 else{
 	GSList *ptr;
-	GSList **head;
 	for(count = 0;count < upper;count++){
 			watch = wordlist->pdata[count]; 
-			head = g_hash_table_lookup(table,watch);
-			g_fprintf(ff,"%s:%d:",watch,g_slist_length(head[0]));
-			ptr = g_slist_sort(head[0],(GCompareFunc)cmp_int);
+			val = g_hash_table_lookup(table,watch);
+			g_fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
+			ptr = g_slist_sort(val->head,(GCompareFunc)cmp_int);
 			while(ptr !=NULL){
 				fputs(ptr->data,ff);
 					if((ptr = ptr->next) != NULL)
@@ -60,9 +64,9 @@ else{
 	
 	for(count = upper;count <wordlist->len;count++){		
 		watch = wordlist->pdata[count]; 
-		head = g_hash_table_lookup(table,watch);
-		g_fprintf(ff,"%s:%d:",watch,g_slist_length(head[0]));
-		ptr = head[0];
+		val = g_hash_table_lookup(table,watch);
+		g_fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
+		ptr = val->head;
 		while(ptr != NULL){
 			fputs(ptr->data,ff);
 			if((ptr = ptr->next) != NULL)
@@ -77,12 +81,12 @@ else{
 void *tokenized_word(void *thnum){
 long threadnum = (long)thnum;int n;
 char ch;
+struct keyval *val;
 gchar *filename,*doc_id;
 gchar **number;
 GPtrArray *locktemp;
 GString *temp = g_string_new(NULL);
 locktemp = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-GSList **head;
 FILE *f;
 	while(1){
 		pthread_mutex_lock(&dirlc);
@@ -103,18 +107,16 @@ FILE *f;
 			if(pthread_mutex_trylock(&tablelc) != 0)goto locktemppt;
 			if(locktemp->len != 0){
 				for(n = 0;n<locktemp->len;n++){
-					if(!(head = g_hash_table_lookup(table,locktemp->pdata[n]))){
-						head = g_new(GSList*,4);
-						head[0] = head[1] = head[2] = head[3] = NULL; 
-						head[threadnum]=g_slist_prepend(NULL,doc_id);
-						g_hash_table_insert(table,g_strdup(locktemp->pdata[n]),head);
+					if(!(val = g_hash_table_lookup(table,locktemp->pdata[n]))){
+						val = g_new(struct keyval,1);
+						val->thr[threadnum] = doc_id;
+						val->head =g_slist_prepend(NULL,doc_id);
+						g_hash_table_insert(table,g_strdup(locktemp->pdata[n]),val);
 					}
 					else{
-						if(!head[threadnum]){
-							head[threadnum] = g_slist_prepend(NULL,doc_id);
-							}
-						else if(!(head[threadnum]->data == doc_id)){
-							head[threadnum] = g_slist_prepend(head[threadnum],doc_id);
+						if(!(val->thr[threadnum] == doc_id)){
+							val->thr[threadnum] = doc_id;
+							val->head = g_slist_prepend(val->head,doc_id);
 							}
 					   }		    
 			}//END LOOP TEMP			 
@@ -122,17 +124,15 @@ FILE *f;
 			}//END IF
 				
 				if(temp->len > 0){
-					if(!(head = g_hash_table_lookup(table,temp->str))){
-						head = g_new(GSList*,4);
-						head[0] = head[1] = head[2] = head[3] = NULL;						
-						head[threadnum] = g_slist_prepend(NULL,doc_id);
-						g_hash_table_insert(table,g_strdup(temp->str),head);
+					if(!(val = g_hash_table_lookup(table,temp->str))){
+						val = g_new(struct keyval,1);
+						val->thr[threadnum] = doc_id;						
+						val->head = g_slist_prepend(NULL,doc_id);
+						g_hash_table_insert(table,g_strdup(temp->str),val);
 					}
-					else if(!head[threadnum]){
-							head[threadnum] = g_slist_prepend(NULL,doc_id);
-						}
-					else if(!(head[threadnum]->data == doc_id)){
-							head[threadnum] = g_slist_prepend(head[threadnum],doc_id);
+					else if(!(val->thr[threadnum] == doc_id)){
+							val->thr[threadnum] = doc_id;
+							val->head = g_slist_prepend(val->head,doc_id);
 						} 	   
 				}	
 			pthread_mutex_unlock(&tablelc);
@@ -152,7 +152,7 @@ FILE *f;
 }
 
 
-void *tabletoarray(gchar *key,GSList **head,gpointer usrdata){
+void *tabletoarray(gchar *key,gpointer head,gpointer usrdata){
 	g_ptr_array_add(wordlist,key);
 }
 
@@ -197,15 +197,11 @@ pthread_join(t2,NULL);
 pthread_join(t3,NULL);
 g_dir_close(dir);
 wordlist = g_ptr_array_sized_new(g_hash_table_size(table));
-pthread_create(&t1,&a1,doconcatlist,NULL);
 docopytable(NULL);
-pthread_join(t1,NULL);
-
+pthread_create(&t1,&a1,sortlist,(void*)one);
 g_chdir("..");
 ff = fopen("outputtemp1","w");
 g_fprintf(ff,"%d\n",wordlist->len);
-
-pthread_create(&t1,&a1,sortlist,(void*)one);
 pthread_create(&t2,&a2,sortlist,(void*)two);
 pthread_create(&t3,&a3,sortlist,(void*)oh);
 sortlist((void*)three);
