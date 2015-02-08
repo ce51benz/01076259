@@ -9,14 +9,18 @@ FILE *ff;
 pthread_mutex_t tablelc;
 pthread_mutex_t wordlistlc;
 pthread_mutex_t dirlc;
-
+pthread_mutex_t wordtemplc;
+gint exitstat;
+GPtrArray *wcbox;
 
 struct keyval{
-	gchar *thr[4];
 	GSList *head;
 };
 
-
+struct wordcontainer{
+	gchar *doc_id;
+	GHashTable *tbl;
+};
 //Compare function use for sorting
 gint cmp_word_node(long *a,long *b){
 	return g_strcmp0(GUINT_TO_POINTER(*a),GUINT_TO_POINTER(*b));
@@ -52,7 +56,7 @@ else{
 	for(count = 0;count < upper;count++){
 			watch = wordlist->pdata[count]; 
 			val = g_hash_table_lookup(table,watch);
-			g_fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
+			fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
 			ptr = g_slist_sort(val->head,(GCompareFunc)cmp_int);
 			while(ptr !=NULL){
 				fputs(ptr->data,ff);
@@ -65,7 +69,7 @@ else{
 	for(count = upper;count <wordlist->len;count++){		
 		watch = wordlist->pdata[count]; 
 		val = g_hash_table_lookup(table,watch);
-		g_fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
+		fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
 		ptr = val->head;
 		while(ptr != NULL){
 			fputs(ptr->data,ff);
@@ -79,75 +83,79 @@ else{
 }
 
 void *tokenized_word(void *thnum){
-long threadnum = (long)thnum;int n;
-char ch;
-struct keyval *val;
-gchar *filename,*doc_id;
-gchar **number;
-GPtrArray *locktemp;
-GString *temp = g_string_new(NULL);
-locktemp = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-FILE *f;
+	char ch;
+	struct wordcontainer *wc;
+	gchar *doc_id,*filename;
+	gchar **number;
+	GHashTable *tb;
+	GString *temp = g_string_new(NULL);
+	FILE *f;
 	while(1){
 		pthread_mutex_lock(&dirlc);
 		if((filename = GUINT_TO_POINTER(g_dir_read_name(dir))) == NULL){
-			pthread_mutex_unlock(&dirlc);
-			break;
+			pthread_mutex_unlock(&dirlc);break;
 		}
 		pthread_mutex_unlock(&dirlc);
 		f = fopen(filename,"r");
-		number = g_strsplit_set(filename,".txt",-1);	
+		number = g_strsplit_set(filename,".txt",-1);			
 		doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
-		while((ch = fgetc(f)) != EOF|| locktemp->len > 0){
-		if((ch>64&&ch<91)||(ch>96&&ch<123)){
-			g_string_append_c(temp,ch);
+		tb = g_hash_table_new_full((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal,(GDestroyNotify)g_free,NULL);
+		while((ch = fgetc(f)) != EOF){
+			if((ch>64&&ch<91)||(ch>96&&ch<123)){
+				g_string_append_c(temp,ch);
+			}
+			else if(temp->len > 0){ 
+				temp = g_string_ascii_down(temp);
+				if(!g_hash_table_contains(tb,temp->str))
+				g_hash_table_add(tb,g_strdup(temp->str));
+				g_string_erase(temp,0,-1);
+			}
 		}
-		else {
-			temp = g_string_ascii_down(temp);
-			if(pthread_mutex_trylock(&tablelc) != 0)goto locktemppt;
-			if(locktemp->len != 0){
-				for(n = 0;n<locktemp->len;n++){
-					if(!(val = g_hash_table_lookup(table,locktemp->pdata[n]))){
-						val = g_new(struct keyval,1);
-						val->thr[threadnum] = doc_id;
-						val->head =g_slist_prepend(NULL,doc_id);
-						g_hash_table_insert(table,g_strdup(locktemp->pdata[n]),val);
-					}
-					else{
-						if(!(val->thr[threadnum] == doc_id)){
-							val->thr[threadnum] = doc_id;
-							val->head = g_slist_prepend(val->head,doc_id);
-							}
-					   }		    
-			}//END LOOP TEMP			 
-			g_ptr_array_remove_range(locktemp,0,locktemp->len);
-			}//END IF
-				
-				if(temp->len > 0){
-					if(!(val = g_hash_table_lookup(table,temp->str))){
-						val = g_new(struct keyval,1);
-						val->thr[threadnum] = doc_id;						
-						val->head = g_slist_prepend(NULL,doc_id);
-						g_hash_table_insert(table,g_strdup(temp->str),val);
-					}
-					else if(!(val->thr[threadnum] == doc_id)){
-							val->thr[threadnum] = doc_id;
-							val->head = g_slist_prepend(val->head,doc_id);
-						} 	   
-				}	
-			pthread_mutex_unlock(&tablelc);
-			g_string_erase(temp,0,-1);
-		}
-		continue;
-		locktemppt:
-		
-		if(temp->len >0){
-		g_ptr_array_add(locktemp,g_strdup(temp->str));
-		g_string_erase(temp,0,-1);
-		}
+		pthread_mutex_lock(&wordtemplc);
+		wc = g_new(struct wordcontainer,1);
+		wc->doc_id = doc_id;
+		wc->tbl = tb;
+		g_ptr_array_add(wcbox,wc);
+		pthread_mutex_unlock(&wordtemplc);
+		fclose(f);
+		g_strfreev(number);
 	}
-	fclose(f);
-	g_strfreev(number);
+	pthread_mutex_lock(&wordtemplc);
+	exitstat++;
+	pthread_mutex_unlock(&wordtemplc);
+	//g_string_free(temp,TRUE);
+}
+void *wordtotable(void *thnum){
+wcbox = g_ptr_array_new();
+int i=0;
+char ch;
+struct keyval *val;
+struct wordcontainer *wc;
+gchar **number;
+GHashTableIter *it;
+gpointer watch;
+GString *temp = g_string_new(NULL);
+FILE *f;
+	while(1){
+		pthread_mutex_lock(&wordtemplc);
+		if(exitstat > 2 && i >= wcbox->len){pthread_mutex_unlock(&wordtemplc);break;}
+		while(i < wcbox->len){
+			wc = wcbox->pdata[i++];
+			g_hash_table_iter_init(it,wc->tbl);
+			while(g_hash_table_iter_next(it,&watch,NULL)){
+				if(!(val = g_hash_table_lookup(table,watch))){
+					val = g_new(struct keyval,1);
+					val->head = g_slist_prepend(NULL,wc->doc_id);
+					g_hash_table_insert(table,watch,val);				
+				}
+				else if(!(val->head->data == wc->doc_id)){
+					val->head = g_slist_prepend(val->head,wc->doc_id);
+				}
+			}
+			//g_hash_table_remove_all(wc->tbl);
+			//g_hash_table_destroy(wc->tbl);
+		}
+		pthread_mutex_unlock(&wordtemplc);	
 	}
 }
 
@@ -156,14 +164,6 @@ void *tabletoarray(gchar *key,gpointer head,gpointer usrdata){
 	g_ptr_array_add(wordlist,key);
 }
 
-void concatlist(gchar *key,GSList **head,gpointer usrdata){
-	head[0] = g_slist_concat(head[0],head[1]);
-	head[2] = g_slist_concat(head[2],head[3]);	
-	head[0] = g_slist_concat(head[0],head[2]);
-}
-void *doconcatlist(void *data){
-g_hash_table_foreach(table,(GHFunc)concatlist,NULL);
-}
 void *docopytable(void *data){
 g_hash_table_foreach(table,(GHFunc)tabletoarray,NULL);
 g_ptr_array_sort(wordlist,(GCompareFunc) cmp_word_node);
@@ -174,7 +174,9 @@ long oh=0,one=1,two=2,three=3;
 pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
 pthread_mutex_init(&dirlc,NULL);
-gint ind;size_t t;
+pthread_mutex_init(&wordtemplc,NULL);
+gint ind;
+exitstat=0;
 table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
 g_chdir(argv[1]);
@@ -187,15 +189,12 @@ pthread_attr_t a3;
 pthread_attr_init(&a1);
 pthread_attr_init(&a2);
 pthread_attr_init(&a3);
-pthread_attr_setstacksize(&a1,1024000);
-pthread_attr_setstacksize(&a2,1024000);
-pthread_attr_setstacksize(&a3,1024000);
-
-pthread_create(&t1,&a1,tokenized_word,(void*)oh);
-pthread_create(&t2,&a2,tokenized_word,(void*)one);
-pthread_create(&t3,&a3,tokenized_word,(void*)two);
+wcbox = g_ptr_array_new();
+pthread_create(&t1,&a1,tokenized_word,NULL);
+pthread_create(&t2,&a2,tokenized_word,NULL);
+pthread_create(&t3,&a3,tokenized_word,NULL);
 //Do parallel task
-tokenized_word((void*)three);
+wordtotable(NULL);
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
