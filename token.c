@@ -123,7 +123,6 @@ void *tokenized_word(void *thnum){
 	g_string_free(temp,TRUE);
 }
 void *wordtotable(void *thnum){
-wcbox = g_ptr_array_new();
 char ch;int i=0;
 struct keyval *val;
 struct wordcontainer *wc;
@@ -214,7 +213,6 @@ pthread_t t10;
 pthread_t t11;
 pthread_attr_t a1;
 pthread_attr_init(&a1);
-//pthread_attr_setschedpolicy(&a1,SCHED_FIFO);
 pthread_attr_setstacksize(&a1,1024000);
 wcbox = g_ptr_array_new();
 pthread_create(&t1,&a1,tokenized_word,NULL);
