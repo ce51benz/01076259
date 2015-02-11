@@ -86,12 +86,13 @@ else{
 }
 
 void *tokenized_word(void *thnum){
-	char ch;
+	char ch;int i=0;
 	struct wordcontainer *wc;
 	char *doc_id,*filename;
 	char **number;
 	GHashTable *tb;
 	GString *temp = g_string_new(NULL);
+	GPtrArray *tokentemp = g_ptr_array_new();
 	FILE *f;
 		while((filename = GUINT_TO_POINTER(g_dir_read_name(dir))) != NULL){
 		f = fopen(filename,"r");
@@ -106,20 +107,30 @@ void *tokenized_word(void *thnum){
 				temp = g_string_ascii_down(temp);
 				if(!g_hash_table_contains(tb,temp->str))
 				g_hash_table_add(tb,strdup(temp->str));
-				g_string_set_size(temp,0);
+				g_string_erase(temp,0,-1);
 			}
 			
 		}
-		pthread_mutex_lock(&wordtemplc);
+
 		wc = g_new(struct wordcontainer,1);
 		wc->doc_id = doc_id;
 		wc->tbl = tb;
+		if(pthread_mutex_trylock(&wordtemplc) !=0)goto checkpoint;
+		for(;i< tokentemp->len;i++)
+		g_ptr_array_add(wcbox,tokentemp->pdata[i]);
 		g_ptr_array_add(wcbox,wc);
+		fclose(f);
+		g_strfreev(number);
 		pthread_mutex_unlock(&wordtemplc);
+		continue;
+		checkpoint:
+		g_ptr_array_add(tokentemp,wc);
 		fclose(f);
 		g_strfreev(number);
 	}
 	pthread_mutex_lock(&wordtemplc);
+		for(;i< tokentemp->len;i++)	
+		g_ptr_array_add(wcbox,tokentemp->pdata[i]);
 	exitstat++;
 	pthread_mutex_unlock(&wordtemplc);
 	//g_string_free(temp,TRUE);
@@ -130,16 +141,41 @@ int i=0;
 char ch;
 struct keyval *val;
 struct wordcontainer *wc;
-gchar **number;
+gchar **number,*filename,*doc_id;
 GHashTableIter *it;
 gpointer watch;
-GString *temp1 = NULL;
-FILE *f;
+GString *temp1 = g_string_new(NULL);
+FILE *f;/*
+	while((filename = GUINT_TO_POINTER(g_dir_read_name(dir)))!=NULL){
+		f = fopen(filename,"r");
+		number = g_strsplit_set(filename,".txt",-1);			
+		doc_id = strdup(number[0] + (sizeof(gchar)*4));
+		while((ch = fgetc(f))!=EOF){
+			if((ch>64&&ch<91)||(ch>96&&ch<123)){
+				g_string_append_c(temp1,ch);
+			}
+			else if(temp1->len > 0){
+				temp1 = g_string_ascii_down(temp1);
+				if(!(val = g_hash_table_lookup(table,temp1->str))){			
+					val = g_new(struct keyval,1);
+					val->head = g_slist_prepend(NULL,doc_id);
+					g_hash_table_insert(table,g_strdup(temp1->str),val);
+				}
+				else if(val->head->data == doc_id){
+					val->head = g_slist_prepend(val->head,doc_id);
+				}
+				g_string_erase(temp1,0,-1);
+			}
+		}
+		fclose(f);
+		g_strfreev(number);
+	}*/
 	while(1){
 		pthread_mutex_lock(&wordtemplc);
 		if(exitstat > 2 && i >= wcbox->len){pthread_mutex_unlock(&wordtemplc);break;}
 		while(i < wcbox->len){
 			wc = wcbox->pdata[i++];
+			pthread_mutex_unlock(&wordtemplc);	
 			g_hash_table_iter_init(it,wc->tbl);
 			while(g_hash_table_iter_next(it,&watch,NULL)){
 				if(!(val = g_hash_table_lookup(table,watch))){
@@ -151,10 +187,10 @@ FILE *f;
 					val->head = g_slist_prepend(val->head,wc->doc_id);
 				}
 			}
-			//g_hash_table_remove_all(wc->tbl);
 			g_hash_table_destroy(wc->tbl);
+			pthread_mutex_lock(&wordtemplc);	
 		}
-		pthread_mutex_unlock(&wordtemplc);
+		pthread_mutex_unlock(&wordtemplc);	
 	}
 }
 
@@ -193,7 +229,7 @@ pthread_t t11;
 pthread_attr_t a1;
 pthread_attr_init(&a1);
 //pthread_attr_setschedpolicy(&a1,SCHED_FIFO);
-pthread_attr_setstacksize(&a1,512000);
+pthread_attr_setstacksize(&a1,1024000);
 wcbox = g_ptr_array_new();
 pthread_create(&t1,&a1,tokenized_word,NULL);
 pthread_create(&t2,&a1,tokenized_word,NULL);
@@ -203,6 +239,7 @@ wordtotable(NULL);
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
+
 g_dir_close(dir);
 wordlist = g_ptr_array_sized_new(g_hash_table_size(table));
 docopytable(NULL);
@@ -219,8 +256,7 @@ pthread_create(&t7,&a1,sortlist,(void*)seven);
 pthread_create(&t8,&a1,sortlist,(void*)eight);
 pthread_create(&t9,&a1,sortlist,(void*)nine);
 pthread_create(&t10,&a1,sortlist,(void*)ten);
-pthread_create(&t11,&a1,sortlist,(void*)oh);
-sortlist((void*)eleven);
+pthread_create(&t11,&a1,sortlist,(void*)eleven);
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
@@ -232,8 +268,9 @@ pthread_join(t8,NULL);
 pthread_join(t9,NULL);
 pthread_join(t10,NULL);
 pthread_join(t11,NULL);
-//Show table data
+sortlist((void*)oh);
 
+//Show table data
 fclose(ff);
 
 //Finally remove array
