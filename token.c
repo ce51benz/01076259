@@ -39,7 +39,7 @@ long count;
 long upper = wordlist->len/12;
 char *watch;
 struct keyval *val;
-if(idx != 0 && idx != 11){
+if(idx != 12 && idx != 11){
 	int uppersum = upper * (idx+1);
 	for(count = (upper*idx);count < uppersum;){
 			watch = wordlist->pdata[count++];
@@ -56,20 +56,7 @@ else if(idx == 11){
 }
 else{
 	GSList *ptr;
-	for(count = 0;count < upper;count++){
-			watch = wordlist->pdata[count]; 
-			val = g_hash_table_lookup(table,watch);
-			fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
-			ptr = g_slist_sort(val->head,(GCompareFunc)cmp_int);
-			while(ptr !=NULL){
-				fputs(ptr->data,ff);
-					if((ptr = ptr->next) != NULL)
-						fputc(',',ff);
-			}
-			fputc('\n',ff);
-	}
-	
-	for(count = upper;count <wordlist->len;count++){		
+	for(count = 0;count <wordlist->len;count++){		
 		watch = wordlist->pdata[count]; 
 		val = g_hash_table_lookup(table,watch);
 		fprintf(ff,"%s:%d:",watch,g_slist_length(val->head));
@@ -103,7 +90,7 @@ void *tokenized_word(void *thnum){
 			if((ch>64&&ch<91)||(ch>96&&ch<123)){
 				g_string_append_c(temp,ch);
 			}
-			else if(temp->len > 0){ 
+			else if(temp->len > 0){
 				temp = g_string_ascii_down(temp);
 				if(!g_hash_table_contains(tb,temp->str))
 				g_hash_table_add(tb,strdup(temp->str));
@@ -133,12 +120,11 @@ void *tokenized_word(void *thnum){
 		g_ptr_array_add(wcbox,tokentemp->pdata[i]);
 	exitstat++;
 	pthread_mutex_unlock(&wordtemplc);
-	//g_string_free(temp,TRUE);
+	g_string_free(temp,TRUE);
 }
 void *wordtotable(void *thnum){
 wcbox = g_ptr_array_new();
-int i=0;
-char ch;
+char ch;int i=0;
 struct keyval *val;
 struct wordcontainer *wc;
 gchar **number,*filename,*doc_id;
@@ -205,7 +191,7 @@ g_ptr_array_sort(wordlist,(GCompareFunc) cmp_word_node);
 
 }
 int main(int argc,char **argv){
-long oh=0,one=1,two=2,three=3,four=4,five=5,six=6,seven=7,eight=8,nine=9,ten=10,eleven=11;
+long twelve=12,oh=0,one=1,two=2,three=3,four=4,five=5,six=6,seven=7,eight=8,nine=9,ten=10,eleven=11;
 pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
 pthread_mutex_init(&dirlc,NULL);
@@ -257,6 +243,7 @@ pthread_create(&t8,&a1,sortlist,(void*)eight);
 pthread_create(&t9,&a1,sortlist,(void*)nine);
 pthread_create(&t10,&a1,sortlist,(void*)ten);
 pthread_create(&t11,&a1,sortlist,(void*)eleven);
+sortlist((void*)oh);
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
@@ -268,8 +255,7 @@ pthread_join(t8,NULL);
 pthread_join(t9,NULL);
 pthread_join(t10,NULL);
 pthread_join(t11,NULL);
-sortlist((void*)oh);
-
+sortlist((void*)twelve);
 //Show table data
 fclose(ff);
 
