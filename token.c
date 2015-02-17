@@ -7,7 +7,7 @@
 #include<sys/stat.h>
 GHashTable *table;
 GPtrArray *wordlist;
-
+GPtrArray *temperer[12];
 GDir *dir;
 FILE *ff;
 pthread_mutex_t tablelc;
@@ -35,10 +35,11 @@ gint cmp_int(long* a,long* b){
 }
 
 void *sortlist(void *index){
-long idx = (long)index;
+long idx = (long)index;int j;
 long count;
 long upper = wordlist->len/12;
-char *watch;
+char *watch,str[1000];
+GString *temper = g_string_new(NULL);
 struct keyval *val;
 if(idx != 12 && idx != 11){
 	int uppersum = upper * (idx+1);
@@ -47,32 +48,50 @@ if(idx != 12 && idx != 11){
 			val = g_hash_table_lookup(table,watch);
 			if(val->arr->len!=1)
 			g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
-		}
+			j=0;
+		
+			sprintf(str,"%s:%d:",watch,val->arr->len);
+			g_string_append(temper,str);
+			while(j < val->arr->len){
+				g_string_append(temper,val->arr->pdata[j++]);
+			if(j < val->arr->len)
+				g_string_append_c(temper,',');					
+			}
+			g_string_append_c(temper,'\n');
+			g_ptr_array_add(temperer[idx],g_strdup(temper->str));
+			g_string_erase(temper,0,-1);							
 	}
+}
 else if(idx == 11){
 	for(count = upper*11;count<wordlist->len;){
 		watch = wordlist->pdata[count++];
 		val = g_hash_table_lookup(table,watch);
 		if(val->arr->len!=1)
 		g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
+		j=0;
+		sprintf(str,"%s:%d:",watch,val->arr->len);
+			g_string_append(temper,str);
+			while(j < val->arr->len){
+				g_string_append(temper,val->arr->pdata[j++]);
+			if(j < val->arr->len)
+				g_string_append_c(temper,',');
+			}
+			g_string_append_c(temper,'\n');
+			g_ptr_array_add(temperer[idx],g_strdup(temper->str));
+			g_string_erase(temper,0,-1);
 	}
 }
 else{
-	GSList *ptr;int j;GString *temper = g_string_new(NULL);
-	for(count = 0;count <wordlist->len;count++){
-		watch = wordlist->pdata[count]; 
-		val = g_hash_table_lookup(table,watch);
-		fprintf(ff,"%s:%d:",watch,val->arr->len);
-		j=0;
-		while(j < val->arr->len){
-			g_string_append(temper,val->arr->pdata[j++]);
-			if(j < val->arr->len)
-				g_string_append_c(temper,',');				
-			}
-				g_string_append_c(temper,'\n');						
-		fputs(temper->str,ff);
-		temper = g_string_erase(temper,0,-1);
-	}
+	j=0;int k;
+	while(j<=11){
+		k=0;
+		while(k<temperer[j]->len){
+			fputs(temperer[j]->pdata[k++],ff);	
+		}
+		j++;
+	}						
+		//g_string_erase(temper,0,-1);
+	
 }
 
 }
@@ -197,6 +216,19 @@ pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
 pthread_mutex_init(&dirlc,NULL);
 mallopt(-8,1);
+temperer[0] = g_ptr_array_new();
+temperer[1] = g_ptr_array_new();
+temperer[2] = g_ptr_array_new();
+temperer[3] = g_ptr_array_new();
+temperer[4] = g_ptr_array_new();
+temperer[5] = g_ptr_array_new();
+temperer[6] = g_ptr_array_new();
+temperer[7] = g_ptr_array_new();
+temperer[8] = g_ptr_array_new();
+temperer[9] = g_ptr_array_new();
+temperer[10] = g_ptr_array_new();
+temperer[11] = g_ptr_array_new();
+
 exitstat=0;
 table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
