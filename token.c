@@ -4,6 +4,7 @@
 #include<stdio.h>
 #include<pthread.h>
 #include<string.h>
+#include<sys/stat.h>
 GHashTable *table;
 GPtrArray *wordlist;
 
@@ -73,10 +74,12 @@ else{
 }
 
 void *tokenized_word(void *thnum){
-	char ch;int i=0;
+	struct stat st;
+	int i=0;
+	long n;
 	struct wordcontainer *wc;
 	gchar* doc_id,*strwatch;
-	char *filename,**number;
+	char *filename,**number,*str;
 	GHashTable *tb;
 	tb = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 	GPtrArray *temparr;
@@ -92,11 +95,16 @@ void *tokenized_word(void *thnum){
 		f = fopen(filename,"rb");
 		number = g_strsplit_set(filename,".txt",-1);			
 		doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
-		pthread_mutex_unlock(&dirlc);	
+		pthread_mutex_unlock(&dirlc);
+	
+		stat(filename,&st);
+		str = g_new(char,st.st_size);
+		fread(str,sizeof(char),st.st_size,f);
+		n = 0;		
 		temparr = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-		while((ch = fgetc(f)) != EOF){
-			if((ch>64&&ch<91)||(ch>96&&ch<123)){
-				g_string_append_c(temp,ch);
+		while(n < st.st_size){
+			if((str[n]>64&&str[n]<91)||(str[n]>96&&str[n]<123)){
+				g_string_append_c(temp,str[n]);
 			}
 			else if(temp->len > 0){
 				temp = g_string_ascii_down(temp);
@@ -107,8 +115,9 @@ void *tokenized_word(void *thnum){
 				}
 				g_string_erase(temp,0,-1);
 			}
+		n++;
 		}
-
+		g_free(str);
 		wc = g_new(struct wordcontainer,1);
 		wc->doc_id = doc_id;
 		wc->arrtemp = temparr;
