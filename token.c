@@ -45,6 +45,7 @@ if(idx != 12 && idx != 11){
 	for(count = (upper*idx);count < uppersum;){
 			watch = wordlist->pdata[count++];
 			val = g_hash_table_lookup(table,watch);
+			if(val->arr->len!=1)
 			g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
 		}
 	}
@@ -52,6 +53,7 @@ else if(idx == 11){
 	for(count = upper*11;count<wordlist->len;){
 		watch = wordlist->pdata[count++];
 		val = g_hash_table_lookup(table,watch);
+		if(val->arr->len!=1)
 		g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
 	}
 }
@@ -66,7 +68,8 @@ else{
 			fputs(val->arr->pdata[j++],ff);
 			if(j < val->arr->len)
 				fputc(',',ff);
-		}
+			}
+		
 		fputc('\n',ff);
 	}
 }
@@ -87,36 +90,36 @@ void *tokenized_word(void *thnum){
 	GPtrArray *tokentemp = g_ptr_array_new();
 	FILE *f;
 		while(1){
-		pthread_mutex_lock(&dirlc);
-		if((filename = GUINT_TO_POINTER(g_dir_read_name(dir))) == NULL){
-		pthread_mutex_unlock(&dirlc);
-		break;
-		}
-		f = fopen(filename,"rb");
-		number = g_strsplit_set(filename,".txt",-1);			
-		doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
-		pthread_mutex_unlock(&dirlc);
-	
-		stat(filename,&st);
-		str = g_new(char,st.st_size);
-		fread(str,sizeof(char),st.st_size,f);
-		n = 0;		
-		temparr = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-		while(n < st.st_size){
-			if((str[n]>64&&str[n]<91)||(str[n]>96&&str[n]<123)){
-				g_string_append_c(temp,str[n]);
-			}
-			else if(temp->len > 0){
-				temp = g_string_ascii_down(temp);
-				if(!g_hash_table_contains(tb,temp->str)){
-					strwatch = g_strdup(temp->str);
-					g_hash_table_add(tb,strwatch);
-					g_ptr_array_add(temparr,strwatch);
+			pthread_mutex_lock(&dirlc);
+				if((filename = GUINT_TO_POINTER(g_dir_read_name(dir))) == NULL){
+					pthread_mutex_unlock(&dirlc);
+					break;
 				}
-				g_string_erase(temp,0,-1);
+			f = fopen(filename,"rb");
+			number = g_strsplit_set(filename,".txt",-1);			
+			doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
+			pthread_mutex_unlock(&dirlc);
+	
+			stat(filename,&st);
+			str = g_new(char,st.st_size);
+			fread(str,sizeof(char),st.st_size,f);
+			n = 0;		
+			temparr = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
+			while(n < st.st_size){
+				if((str[n]>64&&str[n]<91)||(str[n]>96&&str[n]<123)){
+					g_string_append_c(temp,str[n]);
+				}
+				else if(temp->len > 0){
+					temp = g_string_ascii_down(temp);
+					if(!g_hash_table_contains(tb,temp->str)){
+						strwatch = g_strdup(temp->str);
+						g_hash_table_add(tb,strwatch);
+						g_ptr_array_add(temparr,strwatch);
+					}
+					g_string_erase(temp,0,-1);
+				}
+				n++;
 			}
-		n++;
-		}
 		g_free(str);
 		wc = g_new(struct wordcontainer,1);
 		wc->doc_id = doc_id;
@@ -125,7 +128,7 @@ void *tokenized_word(void *thnum){
 		
 		if(pthread_mutex_trylock(&wordtemplc) !=0)goto checkpoint;
 		for(;i< tokentemp->len;i++)
-		g_ptr_array_add(wcbox,tokentemp->pdata[i]);
+			g_ptr_array_add(wcbox,tokentemp->pdata[i]);
 		
 		g_ptr_array_add(wcbox,wc);
 	
@@ -220,7 +223,6 @@ wordtotable(NULL);
 pthread_join(t1,NULL);
 pthread_join(t2,NULL);
 pthread_join(t3,NULL);
-
 g_dir_close(dir);
 wordlist = g_ptr_array_new();
 docopytable(NULL);
