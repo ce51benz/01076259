@@ -201,6 +201,7 @@ pthread_t t10;
 pthread_t t11;
 pthread_attr_t a1;
 pthread_attr_init(&a1);
+pthread_attr_setstacksize(&a1,1024000);
 wcbox = g_ptr_array_new();
 pthread_create(&t1,&a1,tokenized_word,NULL);
 pthread_create(&t2,&a1,tokenized_word,NULL);
