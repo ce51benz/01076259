@@ -58,19 +58,20 @@ else if(idx == 11){
 	}
 }
 else{
-	GSList *ptr;int j;
-	for(count = 0;count <wordlist->len;count++){		
+	GSList *ptr;int j;GString *temper = g_string_new(NULL);
+	for(count = 0;count <wordlist->len;count++){
 		watch = wordlist->pdata[count]; 
 		val = g_hash_table_lookup(table,watch);
 		fprintf(ff,"%s:%d:",watch,val->arr->len);
 		j=0;
 		while(j < val->arr->len){
-			fputs(val->arr->pdata[j++],ff);
+			g_string_append(temper,val->arr->pdata[j++]);
 			if(j < val->arr->len)
-				fputc(',',ff);
+				g_string_append_c(temper,',');				
 			}
-		
-		fputc('\n',ff);
+				g_string_append_c(temper,'\n');						
+		fputs(temper->str,ff);
+		temper = g_string_erase(temper,0,-1);
 	}
 }
 
