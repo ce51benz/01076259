@@ -197,14 +197,17 @@ struct wordcontainer *wc;
 					val = g_new(struct keyval,1);
 					val->arr = g_ptr_array_new();
 					g_ptr_array_add(val->arr,wc->doc_id);
-					g_hash_table_insert(table,g_strdup(wc->arrtemp->pdata[j]),val);
+					g_hash_table_insert(table,wc->arrtemp->pdata[j],val);
 				}
-				else if(!(val->arr->pdata[(val->arr->len)-1] == wc->doc_id)){
-					g_ptr_array_add(val->arr,wc->doc_id);
+				else {
+					g_free(wc->arrtemp->pdata[j]);						
+					if(!(val->arr->pdata[(val->arr->len)-1] == wc->doc_id)){
+						g_ptr_array_add(val->arr,wc->doc_id);
+					}
 				}
 				j++;
 			}
-			g_ptr_array_free(wc->arrtemp,TRUE);
+			g_ptr_array_free(wc->arrtemp,FALSE);
 			pthread_mutex_lock(&wordtemplc);	
 		}
 		pthread_mutex_unlock(&wordtemplc);	
