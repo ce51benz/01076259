@@ -102,9 +102,7 @@ else{
 		}
 		j++;
 	}
-		//g_string_erase(temper,0,-1);
-	
-}
+    }
 
 }
 
@@ -142,7 +140,7 @@ void *tokenized_word(void *thnum){
 					g_string_append_c(temp,str[n]);
 				}
 				else if(temp->len > 0){
-					temp = g_string_ascii_down(temp);
+					g_string_ascii_down(temp);
 					if(!g_hash_table_contains(tb,temp->str)){
 						strwatch = g_strdup(temp->str);
 						g_hash_table_add(tb,strwatch);
