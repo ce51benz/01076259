@@ -12,7 +12,7 @@ GDir *dir;
 FILE *ff;
 pthread_mutex_t tablelc;
 pthread_mutex_t wordlistlc;
-pthread_mutex_t dirlc;
+pthread_mutex_t dirlc = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t wordtemplc = PTHREAD_MUTEX_INITIALIZER;
 gint exitstat;
 GPtrArray *wcbox;
@@ -108,6 +108,7 @@ else{
 
 void *tokenized_word(void *thnum){
 	struct stat st;
+	int gcharsize = sizeof(gchar)*4;
 	int i=0;
 	long n;
 	struct wordcontainer *wc;
@@ -127,7 +128,7 @@ void *tokenized_word(void *thnum){
 				}
 			f = fopen(filename,"rb");
 			number = g_strsplit_set(filename,".txt",-1);			
-			doc_id = g_strdup(number[0] + (sizeof(gchar)*4));
+			doc_id = g_strdup(number[0] + gcharsize);
 			pthread_mutex_unlock(&dirlc);
 	
 			stat(filename,&st);
@@ -193,7 +194,7 @@ struct wordcontainer *wc;
 			while(j<wc->arrtemp->len){
 				if(!(val = g_hash_table_lookup(table,wc->arrtemp->pdata[j]))){
 					val = g_new(struct keyval,1);
-					val->arr = g_ptr_array_new();
+					val->arr = g_ptr_array_sized_new(1);
 					g_ptr_array_add(val->arr,wc->doc_id);
 					g_hash_table_insert(table,wc->arrtemp->pdata[j],val);
 				}
@@ -224,28 +225,20 @@ g_ptr_array_sort(wordlist,(GCompareFunc) cmp_word_node);
 }
 
 int main(int argc,char **argv){
-long twelve=12,oh=0,one=1,two=2,three=3,four=4,five=5,six=6,seven=7,eight=8,nine=9,ten=10,eleven=11;
+int iterind;
+long threadno[13] = {0,1,2,3,4,5,6,7,8,9,10,11,12};
 pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
-pthread_mutex_init(&dirlc,NULL);
 mallopt(-8,1);
-temperer[0] = g_ptr_array_new();
-temperer[1] = g_ptr_array_new();
-temperer[2] = g_ptr_array_new();
-temperer[3] = g_ptr_array_new();
-temperer[4] = g_ptr_array_new();
-temperer[5] = g_ptr_array_new();
-temperer[6] = g_ptr_array_new();
-temperer[7] = g_ptr_array_new();
-temperer[8] = g_ptr_array_new();
-temperer[9] = g_ptr_array_new();
-temperer[10] = g_ptr_array_new();
-temperer[11] = g_ptr_array_new();
+for(iterind=0;iterind <12;iterind++)
+temperer[iterind] = g_ptr_array_new();
 
 exitstat=0;
 table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
 g_chdir(argv[1]);
+pthread_t thread[11];
+
 pthread_t t1;
 pthread_t t2;
 pthread_t t3;
@@ -275,31 +268,16 @@ docopytable(NULL);
 g_chdir("..");
 ff = fopen("outputtemp1","wb");
 g_fprintf(ff,"%d\n",wordlist->len);
-pthread_create(&t1,&a1,sortlist,(void*)one);
-pthread_create(&t2,&a1,sortlist,(void*)two);
-pthread_create(&t3,&a1,sortlist,(void*)three);
-pthread_create(&t4,&a1,sortlist,(void*)four);
-pthread_create(&t5,&a1,sortlist,(void*)five);
-pthread_create(&t6,&a1,sortlist,(void*)six);
-pthread_create(&t7,&a1,sortlist,(void*)seven);
-pthread_create(&t8,&a1,sortlist,(void*)eight);
-pthread_create(&t9,&a1,sortlist,(void*)nine);
-pthread_create(&t10,&a1,sortlist,(void*)ten);
-pthread_create(&t11,&a1,sortlist,(void*)eleven);
-sortlist((void*)oh);
-pthread_join(t1,NULL);
-pthread_join(t2,NULL);
-pthread_join(t3,NULL);
-pthread_join(t4,NULL);
-pthread_join(t5,NULL);
-pthread_join(t6,NULL);
-pthread_join(t7,NULL);
-pthread_join(t8,NULL);
-pthread_join(t9,NULL);
-pthread_join(t10,NULL);
-pthread_join(t11,NULL);
-sortlist((void*)twelve);
-//Show table data
+
+for(iterind=0;iterind <11;iterind++)
+pthread_create(&thread[iterind],&a1,sortlist,(void*)threadno[iterind+1]);
+
+sortlist((void*)threadno[0]);
+
+for(iterind=0;iterind <11;iterind++)
+pthread_join(thread[iterind],NULL);
+
+sortlist((void*)threadno[12]);
 fclose(ff);
 
 //Finally remove array
