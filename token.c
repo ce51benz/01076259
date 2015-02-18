@@ -46,18 +46,23 @@ if(idx != 12 && idx != 11){
 	for(count = (upper*idx);count < uppersum;){
 			watch = wordlist->pdata[count++];
 			val = g_hash_table_lookup(table,watch);
-			if(val->arr->len!=1)
-			g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
-			j=0;
+			if(val->arr->len!=1){
+				g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
+				j=0;
 		
-			sprintf(str,"%s:%d:",watch,val->arr->len);
-			g_string_append(temper,str);
-			while(j < val->arr->len){
-				g_string_append(temper,val->arr->pdata[j++]);
-			if(j < val->arr->len)
-				g_string_append_c(temper,',');					
+				sprintf(str,"%s:%d:",watch,val->arr->len);
+				g_string_append(temper,str);
+				while(j < val->arr->len){
+					g_string_append(temper,val->arr->pdata[j++]);
+				if(j < val->arr->len)
+					g_string_append_c(temper,',');					
+				}
+				g_string_append_c(temper,'\n');
 			}
-			g_string_append_c(temper,'\n');
+			else{
+			sprintf(str,"%s:%d:%s\n",watch,val->arr->len,val->arr->pdata[0]);		
+			g_string_append(temper,str);			
+			}
 			g_ptr_array_add(temperer[idx],g_strdup(temper->str));
 			g_string_erase(temper,0,-1);							
 	}
@@ -66,7 +71,7 @@ else if(idx == 11){
 	for(count = upper*11;count<wordlist->len;){
 		watch = wordlist->pdata[count++];
 		val = g_hash_table_lookup(table,watch);
-		if(val->arr->len!=1)
+		if(val->arr->len!=1){
 		g_ptr_array_sort(val->arr,(GCompareFunc)cmp_int);
 		j=0;
 		sprintf(str,"%s:%d:",watch,val->arr->len);
@@ -77,6 +82,13 @@ else if(idx == 11){
 				g_string_append_c(temper,',');
 			}
 			g_string_append_c(temper,'\n');
+		}
+		else
+			{
+			sprintf(str,"%s:%d:%s\n",watch,val->arr->len,val->arr->pdata[0]);		
+			g_string_append(temper,str);
+			}
+		
 			g_ptr_array_add(temperer[idx],g_strdup(temper->str));
 			g_string_erase(temper,0,-1);
 	}
@@ -89,7 +101,7 @@ else{
 			fputs(temperer[j]->pdata[k++],ff);	
 		}
 		j++;
-	}						
+	}
 		//g_string_erase(temper,0,-1);
 	
 }
