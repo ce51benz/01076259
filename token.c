@@ -8,6 +8,7 @@
 GHashTable *table;
 GPtrArray *wordlist;
 GPtrArray *temperer[12];
+gchar *path;
 GDir *dir;
 FILE *ff;
 pthread_mutex_t tablelc;
@@ -108,6 +109,7 @@ else{
 
 void *tokenized_word(void *thnum){
 	struct stat st;
+	char *fullpath,*slash = "/";
 	int gcharsize = sizeof(gchar)*4;
 	int i=0;
 	long n;
@@ -126,12 +128,14 @@ void *tokenized_word(void *thnum){
 					pthread_mutex_unlock(&dirlc);
 					break;
 				}
-			f = fopen(filename,"rb");
+			if(strlen(filename) < 4){pthread_mutex_unlock(&dirlc);continue;}
+			fullpath = g_strconcat(path,slash,filename,NULL);
+			f = fopen(fullpath,"rb");
 			number = g_strsplit_set(filename,".txt",-1);			
 			doc_id = g_strdup(number[0] + gcharsize);
 			pthread_mutex_unlock(&dirlc);
-	
-			stat(filename,&st);
+			stat(fullpath,&st);
+			g_free(fullpath);
 			str = g_new(char,st.st_size);
 			fread(str,sizeof(char),st.st_size,f);
 			n = 0;		
@@ -229,27 +233,21 @@ int iterind;
 long threadno[13] = {0,1,2,3,4,5,6,7,8,9,10,11,12};
 pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
-mallopt(-8,1);
+mallopt(-8,2);
 for(iterind=0;iterind <12;iterind++)
 temperer[iterind] = g_ptr_array_new();
 
 exitstat=0;
 table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
-g_chdir(argv[1]);
+path = argv[1];
 pthread_t thread[11];
 
 pthread_t t1;
 pthread_t t2;
 pthread_t t3;
 pthread_t t4;
-pthread_t t5;
-pthread_t t6;
-pthread_t t7;
-pthread_t t8;
-pthread_t t9;
-pthread_t t10;
-pthread_t t11;
+
 pthread_attr_t a1;
 pthread_attr_init(&a1);
 pthread_attr_setstacksize(&a1,1024000);
@@ -265,8 +263,7 @@ pthread_join(t3,NULL);
 g_dir_close(dir);
 wordlist = g_ptr_array_new();
 docopytable(NULL);
-g_chdir("..");
-ff = fopen("outputtemp1","wb");
+ff = fopen("output","wb");
 g_fprintf(ff,"%d\n",wordlist->len);
 
 for(iterind=0;iterind <11;iterind++)
