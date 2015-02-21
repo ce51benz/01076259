@@ -234,6 +234,7 @@ long threadno[13] = {0,1,2,3,4,5,6,7,8,9,10,11,12};
 pthread_mutex_init(&tablelc,NULL);
 pthread_mutex_init(&wordlistlc,NULL);
 mallopt(-8,2);
+
 for(iterind=0;iterind <12;iterind++)
 temperer[iterind] = g_ptr_array_new();
 
@@ -242,24 +243,21 @@ table = g_hash_table_new((GHashFunc)g_str_hash,(GEqualFunc)g_str_equal);
 dir = g_dir_open(argv[1],0,NULL);
 path = argv[1];
 pthread_t thread[11];
+pthread_attr_t attr[11];
 
-pthread_t t1;
-pthread_t t2;
-pthread_t t3;
-pthread_t t4;
-
-pthread_attr_t a1;
-pthread_attr_init(&a1);
-pthread_attr_setstacksize(&a1,1024000);
+for(iterind=0;iterind<11;iterind++){
+pthread_attr_init(&attr[iterind]);
+pthread_attr_setstacksize(&attr[iterind],1024000);
+}
 wcbox = g_ptr_array_new();
-pthread_create(&t1,&a1,tokenized_word,NULL);
-pthread_create(&t2,&a1,tokenized_word,NULL);
-pthread_create(&t3,&a1,tokenized_word,NULL);
+pthread_create(&thread[0],&attr[0],tokenized_word,NULL);
+pthread_create(&thread[1],&attr[1],tokenized_word,NULL);
+pthread_create(&thread[2],&attr[2],tokenized_word,NULL);
 //Do parallel task
 wordtotable(NULL);
-pthread_join(t1,NULL);
-pthread_join(t2,NULL);
-pthread_join(t3,NULL);
+pthread_join(thread[0],NULL);
+pthread_join(thread[1],NULL);
+pthread_join(thread[2],NULL);
 g_dir_close(dir);
 wordlist = g_ptr_array_new();
 docopytable(NULL);
@@ -267,7 +265,7 @@ ff = fopen("output","wb");
 g_fprintf(ff,"%d\n",wordlist->len);
 
 for(iterind=0;iterind <11;iterind++)
-pthread_create(&thread[iterind],&a1,sortlist,(void*)threadno[iterind+1]);
+pthread_create(&thread[iterind],&attr[iterind],sortlist,(void*)threadno[iterind+1]);
 
 sortlist((void*)threadno[0]);
 
