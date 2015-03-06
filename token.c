@@ -108,7 +108,7 @@ else{
 }
 
 void *tokenized_word(void *thnum){
-	struct stat st;
+	struct stat filestat;
 	char *fullpath,*slash = "/";
 	int gcharsize = sizeof(gchar)*4;
 	int i=0;
@@ -134,13 +134,13 @@ void *tokenized_word(void *thnum){
 			number = g_strsplit_set(filename,".txt",-1);			
 			doc_id = g_strdup(number[0] + gcharsize);
 			pthread_mutex_unlock(&dirlc);
-			stat(fullpath,&st);
+			stat(fullpath,&filestat);
 			g_free(fullpath);
-			str = g_new(char,st.st_size);
-			fread(str,sizeof(char),st.st_size,f);
+			str = g_new(char,filestat.st_size);
+			fread(str,sizeof(char),filestat.st_size,f);
 			n = 0;		
 			temparr = g_ptr_array_new_with_free_func((GDestroyNotify)g_free);
-			while(n < st.st_size){
+			while(n < filestat.st_size){
 				if((str[n]>64&&str[n]<91)||(str[n]>96&&str[n]<123)){
 					g_string_append_c(temp,str[n]);
 				}
