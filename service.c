@@ -27,7 +27,27 @@ if(ready==0)err = EBUSY;
 rfos_complete_get(p->obj,p->inv,err);
 g_free(p->path);
 g_free(p->key);
-g_free(pa);
+g_free(p);
+pthread_exit(0);
+
+}
+
+//worker function for put cmd
+void *do_handle_put(void *pa){
+guint err;
+getput_param *p = (getput_param*)pa;
+    guint64 test;
+	for(test=1;test<3500000000;test++);
+if(ready==0)err = EBUSY;
+    else if(strlen(p->key)!=8)
+	err = ENAMETOOLONG;
+    else
+    	err = 0;
+
+rfos_complete_put(p->obj,p->inv,err);
+g_free(p->path);
+g_free(p->key);
+g_free(p);
 pthread_exit(0);
 
 }
@@ -47,7 +67,6 @@ static gboolean on_handle_get (
 
     pthread_create(&worker,NULL,do_handle_get,p);
 
-    /** End of Get method execution, returning values **/
     return TRUE;
 }
 
@@ -56,17 +75,39 @@ static gboolean on_handle_put (
     GDBusMethodInvocation *invocation,
     const gchar *key,
     const gchar *src) {
-    guint err;
-    guint64 test;
-	/*
-    if(strlen(key)!=8)
-	err = ENAMETOOLONG;
-    else*/
-	for(test=1;test<3500000000;test++);
-    	err = 0;
-    /** End of Put method execution, returning values **/
-    rfos_complete_put(object, invocation, err);
- 
+    pthread_t worker;
+	getput_param *p = g_new(getput_param,1);
+	p->obj = object;
+	p->inv = invocation;
+	p->key = g_strdup(key);
+	p->path = g_strdup(src);
+
+    pthread_create(&worker,NULL,do_handle_put,p);
+    return TRUE;
+}
+
+static gboolean on_handle_remove(
+    RFOS *object,
+    GDBusMethodInvocation *invocation,
+    const gchar *key){
+    rfos_complete_remove(object,invocation,0);
+    return TRUE;
+}
+
+static gboolean on_handle_search(
+    RFOS *object,
+    GDBusMethodInvocation *invocation,
+    const gchar *key,
+    const gchar *outpath){
+    rfos_complete_search(object,invocation,0);
+    return TRUE;
+}
+
+static gboolean on_handle_stat(
+    RFOS *object,
+    GDBusMethodInvocation *invocation,
+    const gchar *key){
+    rfos_complete_stat(object,invocation,0,0,0);
     return TRUE;
 }
 
@@ -79,6 +120,9 @@ static void on_name_acquired (GDBusConnection *connection,
     /* Bind method invocation signals with the appropriate function calls */
     g_signal_connect (skeleton, "handle-get", G_CALLBACK (on_handle_get), NULL);
     g_signal_connect (skeleton, "handle-put", G_CALLBACK (on_handle_put), NULL);
+    g_signal_connect (skeleton, "handle-remove", G_CALLBACK (on_handle_remove), NULL);
+    g_signal_connect (skeleton,"handle-search",G_CALLBACK(on_handle_search),NULL);
+    g_signal_connect (skeleton,"handle-stat",G_CALLBACK(on_handle_stat),NULL);
     /* Export the RFOS service on the connection as /kmitl/ce/os/RFOS object  */
     g_dbus_interface_skeleton_export (G_DBUS_INTERFACE_SKELETON (skeleton),
         connection,
