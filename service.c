@@ -4,14 +4,37 @@
 #include <errno.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <sys/stat.h>
 int ready = 0;
 pthread_mutex_t lock;
+
+typedef struct _vcb{
+guint32 numblock;
+guint32 free;
+guint32 diskno;
+}VCB;
+
+typedef struct _fe{
+gchar key[8];
+guint32 size;
+guint64 atime;
+guint32 sblock;
+}FILE_ENT;
+
 typedef struct handle_getput_param{
 RFOS *obj;
 GDBusMethodInvocation *inv;
 gchar *key;
 gchar *path;
 }getput_param;
+
+typedef struct disk_param{
+gchar *disk1;
+gchar *disk2;
+gchar *disk3;
+gchar *disk4;
+gint numdisk;
+}DISK;
 
 //worker function for get cmd
 void *do_handle_get(void *pa){
@@ -131,15 +154,40 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-guint64 i;
-for(i=0;i<4000000000;i++);
-for(i=0;i<4000000000;i++);
+FILE *s;
+s = fopen("testwrite","w");
+g_fprintf(s,"test1234");
+fclose(s);
+/*struct stat sta;
+stat("disk8.img",&sta);
+g_printf("SIZE = %ld\n",sta.st_size);*/
 ready = 1;
 pthread_exit(0);
 }
-int main (void)
+int main (int argc,char **argv)
 {
 pthread_t test;
+DISK d;
+if(argc > 1){
+d.numdisk = argc - 1;
+	if(argc == 2){
+	d.disk1 = argv[1];
+	}
+	else if(argc == 3){
+	d.disk1 = argv[1];
+	d.disk2 = argv[2];
+	}
+	else if(argc == 4){
+	d.disk1 = argv[1];
+	d.disk2 = argv[2];
+	d.disk3 = argv[3];
+	}
+	else{
+	d.disk1 = argv[1];
+	d.disk2 = argv[2];
+	d.disk3 = argv[3];
+	d.disk4 = argv[4];
+	}
 pthread_mutex_init(&lock,NULL);
     /* Initialize daemon main loop */
     GMainLoop *loop = g_main_loop_new (NULL, FALSE);
@@ -155,7 +203,11 @@ pthread_mutex_init(&lock,NULL);
     /* Start the main loop */
 
 //Initialized RFOS (FORMATTING) via another thread
-pthread_create(&test,NULL,dummywork,NULL);
+pthread_create(&test,NULL,dummywork,&d);
     g_main_loop_run (loop);
-    return 0;
+}
+else{
+g_printf("Usage:./rfos-svc [disk1-name] [disk2-name] [disk3-name] [disk4-name]\n"); 
+} 
+   return 0;
 }
