@@ -9,17 +9,28 @@ int ready = 0;
 pthread_mutex_t lock;
 
 typedef struct _vcb{
+guint32 diskno;
 guint32 numblock;
 guint32 free;
-guint32 diskno;
+guint32 blocksize;
+guint32 bitvec_bl;
+guint32 file_ent_bl;
+guint32 startblock;
 }VCB;
 
+VCB vblock;
 typedef struct _fe{
 gchar key[8];
 guint32 size;
 guint64 atime;
 guint32 sblock;
 }FILE_ENT;
+
+typedef struct _block{
+guint32 next;
+gchar data[28];
+}DBLOCK;
+
 
 typedef struct handle_getput_param{
 RFOS *obj;
@@ -113,6 +124,10 @@ static gboolean on_handle_remove(
     RFOS *object,
     GDBusMethodInvocation *invocation,
     const gchar *key){
+    FILE *test = fopen("sdasdasd","wb");
+    char *str = "test";
+    fwrite(str,1,4,test);
+    fclose(test);
     rfos_complete_remove(object,invocation,0);
     return TRUE;
 }
@@ -154,13 +169,118 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-FILE *s;
-s = fopen("testwrite","w");
-g_fprintf(s,"test1234");
-fclose(s);
+struct stat s;
+DISK *d = (DISK*)t;
+FILE *disk01 = fopen64(d->disk1,"rb+");
+if(!disk01){
+g_printf("Open disk failed.\n");
+}
+else
+{
+fread(&vblock,28,1,disk01);
+if(vblock.numblock == 0){
+g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
+stat(d->disk1,&s);
+vblock.diskno = 0;
+vblock.blocksize = 32;
+vblock.numblock = s.st_size/vblock.blocksize;
+vblock.bitvec_bl = vblock.numblock/8/vblock.blocksize;
+vblock.file_ent_bl = vblock.numblock*0.05;
+vblock.free = vblock.numblock-vblock.bitvec_bl-vblock.file_ent_bl-1;
+vblock.startblock = vblock.bitvec_bl+vblock.file_ent_bl+1;
+gchar *bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
+guint i,j=0;
+for(i = 0;;i++){	
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x80;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x40;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x20;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x10;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x08;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x04;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x02;
+	j++;
+	if(j>=vblock.startblock)break;
+	bitvec[i] = bitvec[i] | 0x01;
+	j++;
+}
+fseeko64(disk01,0,SEEK_SET);
+fwrite(&vblock,28,1,disk01);
+fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+g_printf("FORMAT COMPLETE!\n");
+}
+else{
+g_printf("FILE SYSTEM DETAIL....\n");
+g_printf("DISK NO:%d\n",vblock.diskno);
+g_printf("BLOCK SIZE:%d\n",vblock.blocksize);
+g_printf("NUMBLOCK:%d\n",vblock.numblock);
+g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock.bitvec_bl);
+g_printf("FILE ENTRY BLOCK COUNT:%d\n",vblock.file_ent_bl);
+g_printf("FREE:%d\n",vblock.free);
+g_printf("START BLOCK:%d\n",vblock.startblock);
+gchar *bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
+fread(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+guint i,j=0,bituse=0;
+for(i = 0;;i++){
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x80) == 0x80)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x40) == 0x40)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x20) == 0x20)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x10) == 0x10)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x08) == 0x08)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x04) == 0x04)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x02) == 0x02)bituse++;
+	j++;
+	if(j>=vblock.numblock)break;
+		if((bitvec[i] & 0x01) == 0x01)bituse++;
+	j++;
+}
+g_printf("NUM OF BLOCK USED:%d\n",bituse);
+}
+fclose(disk01);
+}
+/*FILE *s,*tt;
+s = fopen("testwrite","rb+");
+tt = fopen("testwrite","rb+");
+fseek(tt,0,SEEK_SET);
+fseek(s,-1,SEEK_END);
+gchar *arr1 = "bank";
+gchar *arr2 = "benz";
+fwrite(arr1,1,4,s);
+fflush(s);
+g_printf("T PTR WRITE = %ld\n",fwrite(arr2,1,4,tt));
+fflush(tt);*/
+//fclose(tt);
+//g_fprintf(s,"test123456787");
+//fclose(s);
 /*struct stat sta;
 stat("disk8.img",&sta);
 g_printf("SIZE = %ld\n",sta.st_size);*/
+
 ready = 1;
 pthread_exit(0);
 }
@@ -188,7 +308,7 @@ d.numdisk = argc - 1;
 	d.disk3 = argv[3];
 	d.disk4 = argv[4];
 	}
-pthread_mutex_init(&lock,NULL);
+	pthread_mutex_init(&lock,NULL);
     /* Initialize daemon main loop */
     GMainLoop *loop = g_main_loop_new (NULL, FALSE);
     /* Attempt to register the daemon with 'kmitl.ce.os.RFOS' name on the bus */
@@ -204,6 +324,7 @@ pthread_mutex_init(&lock,NULL);
 
 //Initialized RFOS (FORMATTING) via another thread
 pthread_create(&test,NULL,dummywork,&d);
+
     g_main_loop_run (loop);
 }
 else{

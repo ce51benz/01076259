@@ -1,7 +1,7 @@
 default: service client
 
 service: codegen service.c
-	gcc -Wall `pkg-config --cflags --libs glib-2.0,gio-unix-2.0` service.c rfos.c -lpthread -o rfos-svc
+	gcc -Wall `pkg-config --cflags --libs glib-2.0,gio-unix-2.0` service.c rfos.c -lpthread -D_LARGEFILE64_SOURCE -o rfos-svc
 
 client: codegen client.c
 	gcc -Wall `pkg-config --cflags --libs glib-2.0,gio-unix-2.0` client.c rfos.c -o rfos
