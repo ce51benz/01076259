@@ -68,18 +68,44 @@ DISK rfosdisk;
 //worker function for get cmd
 void *do_handle_get(void *pa){
 guint err;
+FILE_ENT_INMEM *entry;
+guint32 nextblock;
 getput_param *p = (getput_param*)pa;
 
 if(ready==0)err = EBUSY;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
-    else
-    	err = 0;
+    else{
+	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){
+		FILE *fp = fopen(p->path,"wb");
+		FILE *disk01 = fopen(rfosdisk.disk1,"rb");
+		DBLOCK data;
+		nextblock = entry->sblock;
+		while(TRUE){
+			g_printf("WRITE!\n");
+			fseeko64(disk01,nextblock*32,SEEK_SET);
+			fread(&data,32,1,disk01);
+			if(strlen(data.data)==28)
+			fwrite(data.data,1,28,fp);
+			else fwrite(data.data,1,strlen(data.data),fp);
+			if(!data.next)break;
+			nextblock = data.next;
+		}
+		fclose(fp);fclose(disk01);
+    		err = 0;
+		
+	}
+	else err = ENOENT;
+	}
+
 
 rfos_complete_get(p->obj,p->inv,err);
+/*DO GARBAGE COLLECTION*/
+g_free(entry);
 g_free(p->path);
 g_free(p->key);
 g_free(p);
+g_printf("END FUNCTION\n");
 pthread_exit(0);
 
 }
