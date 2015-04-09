@@ -9,7 +9,7 @@ int ready = 0;
 pthread_mutex_t lock;
 GHashTable *filetable;
 gchar *bitvec;
-
+int bytechk[8] = {0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01};
 typedef struct _vcb{
 guint32 diskno;
 guint32 numblock;
@@ -23,11 +23,11 @@ guint32 inv_file;
 
 VCB vblock;
 typedef struct _fe{
-gchar key[8];
+char key[8];
 guint32 size;
 guint64 atime;
 guint32 sblock;
-gchar valid;
+char valid;
 }FILE_ENT;
 
 typedef struct _fe1{
@@ -87,6 +87,8 @@ pthread_exit(0);
 //worker function for put cmd
 void *do_handle_put(void *pa){
 guint err;
+NODE *tail =NULL,*head = NULL;
+guint32 i,blockloc,j,blockwrct=0,nextblock,k;
 getput_param *p = (getput_param*)pa;
 
     if(ready==0)err = EBUSY;
@@ -98,226 +100,52 @@ getput_param *p = (getput_param*)pa;
 	else{
 		if(g_hash_table_contains(filetable,p->key)==FALSE)
 		{
-			FILE_ENT fe;
-			NODE *tail =NULL,*head = NULL;
-			guint32 i,blockloc,j,blockwrct=0,lastblock = 0,nextblock;
+			FILE_ENT fe;	
 			for(i=0;i<8;i++)
 				fe.key[i] = p->key[i];
 			struct stat s;
 			stat(p->path,&s);
 			fe.size = s.st_size;
-			//Delayed fe.atime
+			fe.key[8] = '\0';
 			//Check for avail. block
 			j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 			for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
-				if(j>=vblock.numblock)break; //0
- 				if((bitvec[i] & 0x80) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+0;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+0;			
-					}
-					lastblock = (i*8)+0;
+				for(k=0;k<8;k++){
+					if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt; //0
+ 					if((bitvec[i] & bytechk[k]) == 0){
+						if(head == NULL){
+							head = tail = g_new(NODE,1);
+							head->data = g_new(DBLOCK,1);
+							(head->data)->next = 0;
+							fread((head->data)->data,1,28,fp);
+							head->next = NULL;
+							blockloc = (i*8)+k;
+						}
+						else{
+							NODE *ptr = g_new(NODE,1);
+							ptr->data = g_new(DBLOCK,1);
+							(ptr->data)->next = 0;
+							fread((ptr->data)->data,1,28,fp);
+							ptr->next = NULL;
+							(tail->data)->next = (i*8)+k;
+							tail->next = ptr;
+							tail = ptr;			
+						}
 					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x80;
+					bitvec[i] = bitvec[i] | bytechk[k];
+					}
+					j++;
 				}
-				j++;
-				if(j>=vblock.numblock)break; //1
-				if((bitvec[i] & 0x40) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+1;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+1;			
-					}
-					lastblock = (i*8)+1;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x40;				
-				}
-				j++;
-				if(j>=vblock.numblock)break; //2
-				if((bitvec[i] & 0x20) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+2;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+2;			
-					}
-					lastblock = (i*8)+2;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x20;
-				}
-				j++;
-				if(j>=vblock.numblock)break; //3
-				if((bitvec[i] & 0x10) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+3;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+3;			
-					}
-					lastblock = (i*8)+3;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x10;
-				}
-				j++;
-				if(j>=vblock.numblock)break; //4
-				if((bitvec[i] & 0x08) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+4;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+4;			
-					}
-					lastblock = (i*8)+4;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x08;
-				}
-				j++;
-				if(j>=vblock.numblock)break; //5
-				if((bitvec[i] & 0x04) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+5;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+5;			
-					}
-					lastblock = (i*8)+5;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x04;
-				}
-				j++;
-				if(j>=vblock.numblock)break; //6
-				if((bitvec[i] & 0x02) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+6;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+6;			
-					}
-					lastblock = (i*8)+6;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x02;
-				}
-				j++;
-				if(j>=vblock.numblock)break; //7
-				if((bitvec[i] & 0x01) == 0){
-					if(head == NULL){
-						head = tail = g_new(NODE,1);
-						head->data = g_new(DBLOCK,1);
-						(head->data)->next = lastblock;
-						fread((head->data)->data,1,28,fp);
-						head->next = NULL;
-						lastblock = blockloc = (i*8)+7;
-					}
-					else{
-						NODE *ptr = g_new(NODE,1);
-						ptr->data = g_new(DBLOCK,1);
-						(ptr->data)->next = lastblock;
-						fread((ptr->data)->data,1,28,fp);
-						ptr->next = NULL;
-						tail->next = ptr;
-						tail = ptr;
-						lastblock = blockloc = (i*8)+7;			
-					}
-					lastblock = (i*8)+7;
-					blockwrct++;
-					bitvec[i] = bitvec[i] | 0x01;
-				}
-				j++;
 			}
+			freeblkrwchkpt:
 			//CONTINUED
-			NODE *ptr = head;nextblock = fe.sblock = blockloc;
+			nextblock = fe.sblock = blockloc;NODE *ptr = head;
 			FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
 			//WRITE DATA TO IMG DISK
 			while(ptr != NULL){
 				fseeko64(disk01,nextblock*32,SEEK_SET);
 				fwrite(ptr->data,32,1,disk01);
+				nextblock = (ptr->data)->next;
 				ptr = ptr->next;
 			}
 			//WRITE FREE BIT VEC TO IMG DISK
@@ -325,29 +153,75 @@ getput_param *p = (getput_param*)pa;
 			fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 			fe.valid = 1;
 			fe.atime = time(NULL);
+
+			vblock.numfile = vblock.numfile+1;
+			vblock.free = vblock.free - blockwrct;
 			//FILE LOCATION FOR AVAIL FILE ENT BLOCK AND WRITE VCB BACK
 			if(!vblock.inv_file){
-				vblock.numfile = vblock.numfile+1;
-				vblock.free = vblock.free - blockwrct;
-				fseeko64(disk01,((vblock.bitvec_bl+1)*32)+(vblock.numfile*sizeof(FILE_ENT)),SEEK_SET);
+				fseeko64(disk01,((vblock.bitvec_bl+1)*32)+((vblock.numfile-1)*sizeof(FILE_ENT)),SEEK_SET);
+				fwrite(&fe,sizeof(FILE_ENT),1,disk01);
+				fseeko64(disk01,0,SEEK_SET);
+				fwrite(&vblock,32,1,disk01);
+				/*write entry FILE_ENT_INMEM to HTB*/
+				FILE_ENT_INMEM *entry = g_new(FILE_ENT_INMEM,1);
+				entry->key = g_strdup(fe.key);
+				entry->size = fe.size;
+				entry->atime = fe.atime;
+				entry->sblock = fe.sblock;
+				entry->valid = fe.valid;
+				entry->fileno = vblock.numfile-1;
+				g_hash_table_insert(filetable,entry->key,entry);
+			}
+			else{
+				/* TO EDIT */
+				/*Iterate hash table and find inv file and replace it to proper location*/
+				/*Do not edit hashtable*/
+				GHashTableIter iter;
+				gpointer key,value;
+				FILE_ENT_INMEM *fentry;
+				g_hash_table_iter_init(&iter,filetable);
+				while(g_hash_table_iter_next(&iter,&key,&value)){
+					fentry = (FILE_ENT_INMEM*)value;
+					if(!fentry->valid){
+						g_hash_table_remove(filetable,fentry->key);
+						g_free(fentry->key);
+						fentry->key = g_strdup(fe.key);
+						fentry->size = fe.size;
+						fentry->atime = fe.atime;
+						fentry->sblock = fe.sblock;
+						fentry->valid = 1;
+						g_hash_table_insert(filetable,fentry->key,fentry);						
+						break;
+					}
+				}
+				vblock.inv_file = vblock.inv_file - 1;
+				fseeko64(disk01,((vblock.bitvec_bl+1)*32)+(fentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
 				fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 				fseeko64(disk01,0,SEEK_SET);
 				fwrite(&vblock,32,1,disk01);
 			}
-			else{
-				/* TO EDIT */
-			}
+			g_printf("KEY => %s\n",fe.key);
+	g_printf("SIZE => %d\n",fe.size);
+	g_printf("ATIME => %ld\n",fe.atime);
+	g_printf("SBLOCK => %d\n",fe.sblock);
+	g_printf("VALID => %d\n",fe.valid);
 			fclose(disk01);
-			/*write entry FILE_ENT_INMEM to HTB*/
 		}
 		else
-		{ /*TO EDIT CASE HTB NOT FOUND*/ }
+		{ g_printf("KEY ALREADY HAVE!\n");/*TO EDIT CASE HTB FOUND*/ }
     		err = 0;
-		/*DO GARBAGE COLLECTION*/
 		}
 	}
 
 rfos_complete_put(p->obj,p->inv,err);
+NODE *ptr = head,*temp;
+/*DO GARBAGE COLLECTION*/
+while(ptr != NULL){
+	g_free(ptr->data);
+	temp = ptr;
+	ptr = ptr->next;
+	g_free(temp);	
+	}
 g_free(p->path);
 g_free(p->key);
 g_free(p);
@@ -457,35 +331,16 @@ vblock.free = vblock.numblock-vblock.bitvec_bl-vblock.file_ent_bl-1;
 vblock.numfile = 0;
 vblock.inv_file = 0;
 bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
-guint i,j=0;
+guint i,j=0,k;
 guint32 startblock = vblock.bitvec_bl+vblock.file_ent_bl+1;
 for(i = 0;;i++){
-	
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x80;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x40;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x20;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x10;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x08;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x04;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x02;
-	j++;
-	if(j>=startblock)break;
-	bitvec[i] = bitvec[i] | 0x01;
-	j++;
+	for(k=0;k<8;k++){
+		if(j>=startblock)goto filefmtchkpt;
+		bitvec[i] = bitvec[i] | bytechk[k];
+		j++;
+	}
 }
+filefmtchkpt:
 fseeko64(disk01,0,SEEK_SET);
 fwrite(&vblock,32,1,disk01);
 fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
@@ -503,48 +358,34 @@ g_printf("FILE COUNT:%d\n",vblock.numfile);
 g_printf("INVALID FILE:%d\n",vblock.inv_file);
 bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
 fread(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
-guint32 i,j=0,bituse=0;
+guint32 i,j=0,bituse=0,k;
 for(i = 0;;i++){
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x80) == 0x80)bituse++;
+	for(k=0;k<8;k++){
+		if(j>=vblock.numblock)goto filerdrchkpt;
+		if((bitvec[i] & bytechk[k]) == bytechk[k])bituse++;
 	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x40) == 0x40)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x20) == 0x20)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x10) == 0x10)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x08) == 0x08)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x04) == 0x04)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x02) == 0x02)bituse++;
-	j++;
-	if(j>=vblock.numblock)break;
-		if((bitvec[i] & 0x01) == 0x01)bituse++;
-	j++;
+	}
 }
+filerdrchkpt:
 g_printf("NUM OF BLOCK USED:%d\n",bituse);
 FILE_ENT fe;
 FILE_ENT_INMEM *entry;
 g_printf("READ FILES:%d\n",vblock.numfile);
-guint feoff = vblock.bitvec_bl+1; 
+guint feoff = vblock.bitvec_bl+1;
 fseeko64(disk01,feoff*32,SEEK_SET);
 for(i=0;i<vblock.numfile;i++){
 	fread(&fe,sizeof(FILE_ENT),1,disk01);
-
 	entry = g_new(FILE_ENT_INMEM,1);
 	entry->key = g_strdup(fe.key);
+	g_printf("KEY => %s\n",entry->key);
 	entry->size = fe.size;
+	g_printf("SIZE => %d\n",entry->size);
 	entry->atime = fe.atime;
 	entry->sblock = fe.sblock;
 	entry->valid = fe.valid;
+	g_printf("ATIME => %ld\n",entry->atime);
+	g_printf("SBLOCK => %d\n",entry->sblock);
+	g_printf("VALID => %d\n",entry->valid);
 	entry->fileno = i;
 
 	g_hash_table_insert(filetable,entry->key,entry);
