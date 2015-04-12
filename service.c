@@ -71,6 +71,50 @@ gint numdisk;
 }DISK;
 
 DISK rfosdisk;
+
+int strcmpcus(long *str1,long *str2){
+return g_strcmp0(GUINT_TO_POINTER(*str1),GINT_TO_POINTER(*str2));
+}
+void *do_handle_search(void *pa){
+guint err;
+FILE_ENT_INMEM *fentry;
+getput_param *p = (getput_param*)pa;
+gpointer key,value;
+GHashTableIter iter;
+GPtrArray *arr = NULL;
+if(!ready)err = EBUSY;
+else if(strlen(p->key)>8)err =ENAMETOOLONG;
+else{
+	arr = g_ptr_array_new();
+	g_hash_table_iter_init(&iter,filetable); //hash table must not be modified!?????
+	while(g_hash_table_iter_next(&iter,&key,&value)){
+		fentry = (FILE_ENT_INMEM *)value;
+		if(fentry->valid){
+			if(!strncmp(fentry->key,p->key,strlen(p->key)))
+				g_ptr_array_add(arr,fentry->key);	
+		}
+	}
+	if(arr->len){
+		g_ptr_array_sort(arr,(GCompareFunc)strcmpcus);
+		FILE *fp = fopen64(p->path,"wb");
+		guint32 i = 0;
+		while(i<arr->len){
+			fprintf(fp,"%s",(char*)arr->pdata[i]);
+			i++;
+			if(i<arr->len)fputc(',',fp);
+		}
+		fclose(fp);err=0;
+	}
+	else err = ENOENT;
+}
+rfos_complete_search(p->obj,p->inv,err);
+//DO GARBAGE COLLECTION
+if(arr != NULL)
+g_ptr_array_free(arr,TRUE);
+g_free(p->key);
+g_free(p->path);
+pthread_exit(0);
+}
 //worker function for get cmd
 void *do_handle_get(void *pa){
 guint err;
@@ -83,13 +127,11 @@ getput_param *p = (getput_param*)pa;
 	err = ENAMETOOLONG;
     else{
 	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){
-		FILE *fp = fopen(p->path,"wb");
-		FILE *disk01 = fopen(rfosdisk.disk1,"rb");
+		FILE *fp = fopen64(p->path,"wb");
+		FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 		DBLOCK data;
 		nextblock = entry->sblock;
-		guint bread = 1;
 		while(TRUE){
-			g_printf("WRITE!\n");
 			fseeko64(disk01,nextblock*32,SEEK_SET);
 			fread(&data,32,1,disk01);
 			if(!data.next){
@@ -104,6 +146,18 @@ getput_param *p = (getput_param*)pa;
 			//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
 			nextblock = data.next;
 		}
+		entry->atime = time(NULL);
+		FILE_ENT fe;
+		fe.size = entry->size;
+		int i;
+		for(i =0;i<8;i++)
+		fe.key[i] = entry->key[i];
+		fe.key[8] = '\0';
+		fe.atime = entry->atime;
+		fe.sblock = entry->sblock;
+		fe.valid = entry->valid;
+		fseeko64(disk01,(((vblock.bitvec_bl+1)*32) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
+		fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 		fclose(fp);fclose(disk01);
     		err = 0;
 	}
@@ -113,11 +167,9 @@ getput_param *p = (getput_param*)pa;
 
 rfos_complete_get(p->obj,p->inv,err);
 /*DO GARBAGE COLLECTION*/
-//g_free(entry);
 g_free(p->path);
 g_free(p->key);
 g_free(p);
-g_printf("END FUNCTION\n");
 pthread_exit(0);
 
 }
@@ -258,7 +310,7 @@ while(ptr != NULL){
 	g_free(ptr->data);
 	temp = ptr;
 	ptr = ptr->next;
-	g_free(temp);	
+	g_free(temp);
 	}
 g_free(p->path);
 g_free(p->key);
@@ -325,10 +377,6 @@ static gboolean on_handle_remove(
     RFOS *object,
     GDBusMethodInvocation *invocation,
     const gchar *key){
-    FILE *test = fopen("sdasdasd","wb");
-    char *str = "test";
-    fwrite(str,1,4,test);
-    fclose(test);
     rfos_complete_remove(object,invocation,0);
     return TRUE;
 }
@@ -338,7 +386,13 @@ static gboolean on_handle_search(
     GDBusMethodInvocation *invocation,
     const gchar *key,
     const gchar *outpath){
-    rfos_complete_search(object,invocation,0);
+	pthread_t worker;
+	getput_param *p = g_new(getput_param,1);
+	p->obj = object;
+	p->inv = invocation;
+	p->key = g_strdup(key);
+	p->path = g_strdup(outpath);
+    pthread_create(&worker,NULL,do_handle_search,p);
     return TRUE;
 }
 
