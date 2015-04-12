@@ -23,7 +23,7 @@ guint32 inv_file;
 
 VCB vblock;
 typedef struct _fe{
-char key[8];
+char key[9];
 guint32 size;
 guint64 atime;
 guint32 sblock;
@@ -56,6 +56,12 @@ gchar *key;
 gchar *path;
 }getput_param;
 
+typedef struct handle_key_param{
+RFOS *obj;
+GDBusMethodInvocation *inv;
+gchar *key;
+}key_param;
+
 typedef struct disk_param{
 gchar *disk1;
 gchar *disk2;
@@ -85,10 +91,10 @@ if(ready==0)err = EBUSY;
 			g_printf("WRITE!\n");
 			fseeko64(disk01,nextblock*32,SEEK_SET);
 			fread(&data,32,1,disk01);
-			if(strlen(data.data)==28)
-			fwrite(data.data,1,28,fp);
-			else fwrite(data.data,1,strlen(data.data),fp);
-			if(!data.next)break;
+			fwrite(data.data,1,32,fp);
+			if(!data.next)
+			break;
+			
 			nextblock = data.next;
 		}
 		fclose(fp);fclose(disk01);
@@ -101,7 +107,7 @@ if(ready==0)err = EBUSY;
 
 rfos_complete_get(p->obj,p->inv,err);
 /*DO GARBAGE COLLECTION*/
-g_free(entry);
+//g_free(entry);
 g_free(p->path);
 g_free(p->key);
 g_free(p);
@@ -126,7 +132,7 @@ getput_param *p = (getput_param*)pa;
 	else{
 		if(g_hash_table_contains(filetable,p->key)==FALSE)
 		{
-			FILE_ENT fe;	
+			FILE_ENT fe;
 			for(i=0;i<8;i++)
 				fe.key[i] = p->key[i];
 			struct stat s;
@@ -165,6 +171,7 @@ getput_param *p = (getput_param*)pa;
 			}
 			freeblkrwchkpt:
 			//CONTINUED
+			fclose(fp);
 			nextblock = fe.sblock = blockloc;NODE *ptr = head;
 			FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
 			//WRITE DATA TO IMG DISK
@@ -179,7 +186,6 @@ getput_param *p = (getput_param*)pa;
 			fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 			fe.valid = 1;
 			fe.atime = time(NULL);
-
 			vblock.numfile = vblock.numfile+1;
 			vblock.free = vblock.free - blockwrct;
 			//FILE LOCATION FOR AVAIL FILE ENT BLOCK AND WRITE VCB BACK
@@ -227,10 +233,10 @@ getput_param *p = (getput_param*)pa;
 				fwrite(&vblock,32,1,disk01);
 			}
 			g_printf("KEY => %s\n",fe.key);
-	g_printf("SIZE => %d\n",fe.size);
-	g_printf("ATIME => %ld\n",fe.atime);
-	g_printf("SBLOCK => %d\n",fe.sblock);
-	g_printf("VALID => %d\n",fe.valid);
+			g_printf("SIZE => %d\n",fe.size);
+			g_printf("ATIME => %ld\n",fe.atime);
+			g_printf("SBLOCK => %d\n",fe.sblock);
+			g_printf("VALID => %d\n",fe.valid);
 			fclose(disk01);
 		}
 		else
@@ -254,6 +260,27 @@ g_free(p);
 pthread_exit(0);
 }
 
+void * do_handle_stat(void *pa){
+key_param *p = (key_param *)pa;
+guint32 size = 0;
+guint err;
+guint64 atime = 0;
+FILE_ENT_INMEM *fentry;
+if(!ready)err = EBUSY;
+else if(strlen(p->key) != 8)err = ENAMETOOLONG;
+else if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
+	size = fentry->size;
+	atime = fentry->atime;
+	err = 0;
+	}
+else
+	err = ENOENT;
+rfos_complete_stat(p->obj,p->inv,size,atime,err);
+//GARBAGE COLLECTION
+g_free(p->key);
+g_free(p);
+pthread_exit(0);
+}
 //Receive request then create thread to do the desired job(before do job,temp any data first)
 static gboolean on_handle_get (
     RFOS *object,
@@ -313,7 +340,12 @@ static gboolean on_handle_stat(
     RFOS *object,
     GDBusMethodInvocation *invocation,
     const gchar *key){
-    rfos_complete_stat(object,invocation,0,0,0);
+    pthread_t worker;
+	key_param *p = g_new(key_param,1);
+	p->obj = object;
+	p->inv = invocation;
+	p->key = g_strdup(key);
+    pthread_create(&worker,NULL,do_handle_stat,p);
     return TRUE;
 }
 
@@ -419,13 +451,6 @@ for(i=0;i<vblock.numfile;i++){
 }
 fclose(disk01);
 }
-
-/*fseek(s,-1,SEEK_END);
-gchar *arr1 = "bank";
-gchar *arr2 = "benz";
-fwrite(arr1,1,4,s);
-fflush(s);
-*/
 
 ready = 1;
 pthread_exit(0);
