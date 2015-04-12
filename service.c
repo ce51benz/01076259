@@ -78,7 +78,7 @@ FILE_ENT_INMEM *entry;
 guint32 nextblock;
 getput_param *p = (getput_param*)pa;
 
-if(ready==0)err = EBUSY;
+    if(ready==0)err = EBUSY;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
     else{
@@ -87,19 +87,25 @@ if(ready==0)err = EBUSY;
 		FILE *disk01 = fopen(rfosdisk.disk1,"rb");
 		DBLOCK data;
 		nextblock = entry->sblock;
+		guint bread = 1;
 		while(TRUE){
 			g_printf("WRITE!\n");
 			fseeko64(disk01,nextblock*32,SEEK_SET);
 			fread(&data,32,1,disk01);
-			fwrite(data.data,1,32,fp);
-			if(!data.next)
-			break;
-			
+			if(!data.next){
+				if(entry->size % 28 != 0)
+					fwrite(data.data,1,entry->size % 28,fp);
+				else
+					fwrite(data.data,1,28,fp);
+				break;
+			}
+			else
+				fwrite(data.data,1,28,fp);
+			//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
 			nextblock = data.next;
 		}
 		fclose(fp);fclose(disk01);
     		err = 0;
-		
 	}
 	else err = ENOENT;
 	}
