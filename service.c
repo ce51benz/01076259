@@ -126,40 +126,43 @@ getput_param *p = (getput_param*)pa;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
     else{
-	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){
-		FILE *fp = fopen64(p->path,"wb");
-		FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
-		DBLOCK data;
-		nextblock = entry->sblock;
-		while(TRUE){
-			fseeko64(disk01,nextblock*32,SEEK_SET);
-			fread(&data,32,1,disk01);
-			if(!data.next){
-				if(entry->size % 28 != 0)
-					fwrite(data.data,1,entry->size % 28,fp);
+	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){ //also check for valid
+		if(!entry->valid)err = ENOENT;
+		else{
+			FILE *fp = fopen64(p->path,"wb");
+			FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+			DBLOCK data;
+			nextblock = entry->sblock;
+			while(TRUE){
+				fseeko64(disk01,nextblock*32,SEEK_SET);
+				fread(&data,32,1,disk01);
+				if(!data.next){
+					if(entry->size % 28 != 0)
+						fwrite(data.data,1,entry->size % 28,fp);
+					else
+						fwrite(data.data,1,28,fp);
+					break;
+				}
 				else
 					fwrite(data.data,1,28,fp);
-				break;
+				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
+				nextblock = data.next;
 			}
-			else
-				fwrite(data.data,1,28,fp);
-			//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
-			nextblock = data.next;
+			entry->atime = time(NULL);
+			FILE_ENT fe;
+			fe.size = entry->size;
+			int i;
+			for(i =0;i<8;i++)
+			fe.key[i] = entry->key[i];
+			fe.key[8] = '\0';
+			fe.atime = entry->atime;
+			fe.sblock = entry->sblock;
+			fe.valid = entry->valid;
+			fseeko64(disk01,(((vblock.bitvec_bl+1)*32) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
+			fwrite(&fe,sizeof(FILE_ENT),1,disk01);
+			fclose(fp);fclose(disk01);
+    			err = 0;
 		}
-		entry->atime = time(NULL);
-		FILE_ENT fe;
-		fe.size = entry->size;
-		int i;
-		for(i =0;i<8;i++)
-		fe.key[i] = entry->key[i];
-		fe.key[8] = '\0';
-		fe.atime = entry->atime;
-		fe.sblock = entry->sblock;
-		fe.valid = entry->valid;
-		fseeko64(disk01,(((vblock.bitvec_bl+1)*32) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
-		fwrite(&fe,sizeof(FILE_ENT),1,disk01);
-		fclose(fp);fclose(disk01);
-    		err = 0;
 	}
 	else err = ENOENT;
 	}
@@ -327,14 +330,73 @@ FILE_ENT_INMEM *fentry;
 if(!ready)err = EBUSY;
 else if(strlen(p->key) != 8)err = ENAMETOOLONG;
 else if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
-	size = fentry->size;
-	atime = fentry->atime;
-	err = 0;
+	if(!fentry->valid)err = ENOENT;
+	else{
+		size = fentry->size;
+		atime = fentry->atime;
+		err = 0;
+	    }
 	}
 else
 	err = ENOENT;
 rfos_complete_stat(p->obj,p->inv,size,atime,err);
 //GARBAGE COLLECTION
+g_free(p->key);
+g_free(p);
+pthread_exit(0);
+}
+
+void *do_handle_remove(void *pa){
+guint err;
+key_param *p = (key_param*)pa; 
+FILE_ENT_INMEM *fentry;
+FILE_ENT fe;
+FILE *disk01;
+guint32 delcnt = 0;
+if(!ready)err = EBUSY;
+else if(strlen(p->key)!=8)err = ENAMETOOLONG;
+else{
+	if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
+		if(!fentry->valid)err = ENOENT; // if file entry is already invalid return ENOENT
+		else{
+			disk01 = fopen64(rfosdisk.disk1,"rb+");
+			DBLOCK data;
+			data.next = fentry->sblock;
+			do{
+				bitvec[data.next/8] = bitvec[data.next/8] & (~bytechk[data.next%8]);
+				fseeko64(disk01,(data.next)*32,SEEK_SET);
+				fread(&data,32,1,disk01);
+				delcnt++;
+			}while(data.next);
+
+			//update valid properties
+			fe.size = 0;
+			int i;
+			for(i =0;i<8;i++)
+			fe.key[i] = fentry->key[i];
+			fe.key[8] = '\0';
+			fe.atime = 0;
+			fe.sblock = 0;
+			fe.valid = 0;fentry->valid = 0;
+	
+			//write data back to disk
+			/*vblock.numfile--;*/vblock.inv_file++;vblock.free+=delcnt;
+			fseeko64(disk01,0,SEEK_SET);
+			fwrite(&vblock,32,1,disk01);
+			fseeko64(disk01,(((vblock.bitvec_bl+1)*32) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
+			fwrite(&fe,sizeof(FILE_ENT),1,disk01);
+			fseeko64(disk01,32,SEEK_SET);
+			fwrite(bitvec,1,(vblock.bitvec_bl*vblock.blocksize),disk01);		
+			fclose(disk01);
+			err = 0;
+		}		
+	}
+	else
+		err = ENOENT;	
+}
+
+rfos_complete_remove(p->obj,p->inv,err);
+//DO GARBAGE COLLECTION
 g_free(p->key);
 g_free(p);
 pthread_exit(0);
@@ -377,8 +439,13 @@ static gboolean on_handle_remove(
     RFOS *object,
     GDBusMethodInvocation *invocation,
     const gchar *key){
-    rfos_complete_remove(object,invocation,0);
-    return TRUE;
+	pthread_t worker;
+	key_param *p = g_new(key_param,1);
+	p->obj = object;
+	p->inv = invocation;
+	p->key = g_strdup(key);
+	pthread_create(&worker,NULL,do_handle_remove,p);
+	return TRUE;
 }
 
 static gboolean on_handle_search(
