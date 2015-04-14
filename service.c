@@ -126,7 +126,7 @@ FILE_ENT_INMEM *entry;
 guint32 nextblock;
 getput_param *p = (getput_param*)pa;
 
-    if(ready==0)err = EBUSY;
+    if(!ready)err = EBUSY;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
     else{
@@ -189,7 +189,7 @@ guint32 i,blockloc,j,blockwrct=0,nextblock,k;
 FILE_ENT_INMEM *hfentry;FILE_ENT fe;
 getput_param *p = (getput_param*)pa;
 
-    if(ready==0)err = EBUSY;
+    if(!ready)err = EBUSY;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
     else{
@@ -205,6 +205,9 @@ getput_param *p = (getput_param*)pa;
 			fe.size = s.st_size;
 			fe.key[8] = '\0';
 			//Check for avail. block
+			if(ceil(fe.size*1.0 / (vblock.blocksize-4)) > vblock.free){
+				fclose(fp);err = ENOSPC;goto putchkpt;			
+			}
 			j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 			for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
 				for(k=0;k<8;k++){
@@ -297,14 +300,12 @@ getput_param *p = (getput_param*)pa;
 				while(g_hash_table_iter_next(&iter,&key,&value)){
 					fentry = (FILE_ENT_INMEM*)value;
 					if(!fentry->valid){
-						g_hash_table_remove(filetable,fentry->key);
 						g_free(fentry->key);
 						fentry->key = g_strdup(fe.key);
 						fentry->size = fe.size;
 						fentry->atime = fe.atime;
 						fentry->sblock = fe.sblock;
-						fentry->valid = 1;
-						g_hash_table_insert(filetable,fentry->key,fentry);						
+						fentry->valid = 1;					
 						break;
 					}
 				}
@@ -323,7 +324,6 @@ getput_param *p = (getput_param*)pa;
 		}
 		else
 		{ 
-			g_printf("KEY ALREADY HAVE!\n");
 			/*TO EDIT CASE HTB FOUND*/ 
 			if(hfentry->valid){
 			//Track what block is already allocated
@@ -337,7 +337,7 @@ getput_param *p = (getput_param*)pa;
 				fe.size = s.st_size;
 				fe.key[8] = '\0';
 				//Check for avail block.
-				if(ceil(hfentry->size*1.0/vblock.blocksize) == ceil(fe.size*1.0/vblock.blocksize)){
+				if(ceil(hfentry->size*1.0/(vblock.blocksize-4)) == ceil(fe.size*1.0/(vblock.blocksize-4))){
 					//this case can replace data instantly!
 					//no need to update vblock
 					FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
@@ -366,10 +366,13 @@ getput_param *p = (getput_param*)pa;
 					fwrite(&fe,sizeof(FILE_ENT),1,disk01);					
 					fclose(disk01);
 				}				
-				else if(ceil(hfentry->size*1.0/vblock.blocksize) < ceil(fe.size*1.0/vblock.blocksize)){
+				else if(ceil(hfentry->size*1.0/(vblock.blocksize-4)) < ceil(fe.size*1.0/(vblock.blocksize-4))){
 					//this case must allocate additional block via find free block...
 					//Use similar procedure of normal case and do it!
 					//Update block for decreased free value,bitvec and fe block
+					if((ceil(fe.size*1.0 / (vblock.blocksize-4))-ceil(hfentry->size*1.0/(vblock.blocksize-4))) > vblock.free){
+						fclose(fp);err = ENOSPC;goto putchkpt;			
+					}
 					FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
 					DBLOCK tdata;NODE *ptr;
 					tdata.next = hfentry->sblock;
@@ -397,7 +400,7 @@ getput_param *p = (getput_param*)pa;
 					j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 					for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
 						for(k=0;k<8;k++){
-							if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt; //0
+							if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt3; //0
  							if((bitvec[i] & bytechk[k]) == 0){	
 								ptr = g_new(NODE,1);
 								ptr->data = g_new(DBLOCK,1);
@@ -413,6 +416,7 @@ getput_param *p = (getput_param*)pa;
 						j++;
 						}
 					}			
+					freeblkrwchkpt3:
 					//Write main data to disk
 					ptr = head;nextblock = hfentry->sblock;
 					while(ptr != NULL){
@@ -499,6 +503,9 @@ getput_param *p = (getput_param*)pa;
 				stat(p->path,&s);
 				fe.size = s.st_size;
 				fe.key[8] = '\0';
+				if(ceil(fe.size*1.0 / (vblock.blocksize-4)) > vblock.free){
+					fclose(fp);err = ENOSPC;goto putchkpt;
+				} 
 				//Check for avail. block
 				j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 				for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
@@ -570,7 +577,7 @@ getput_param *p = (getput_param*)pa;
     		err = 0;
 		}
 	}
-
+putchkpt:
 rfos_complete_put(p->obj,p->inv,err);
 NODE *ptr = head,*temp;
 /*DO GARBAGE COLLECTION*/
@@ -769,82 +776,82 @@ void *dummywork(void *t){
 struct stat s;
 FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 if(!disk01){
-g_printf("Open disk failed.\n");
+	g_printf("Open disk failed.\n");
 }
 else
 {
-fread(&vblock,32,1,disk01);
-if(vblock.numblock == 0){
-g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
-stat(rfosdisk.disk1,&s);
-vblock.diskno = 0;
-vblock.blocksize = 32;
-vblock.numblock = s.st_size/vblock.blocksize;
-vblock.bitvec_bl = vblock.numblock/8/vblock.blocksize;
-vblock.file_ent_bl = vblock.numblock*0.05;
-vblock.free = vblock.numblock-vblock.bitvec_bl-vblock.file_ent_bl-1;
-vblock.numfile = 0;
-vblock.inv_file = 0;
-bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
-guint i,j=0,k;
-guint32 startblock = vblock.bitvec_bl+vblock.file_ent_bl+1;
-for(i = 0;;i++){
-	for(k=0;k<8;k++){
-		if(j>=startblock)goto filefmtchkpt;
-		bitvec[i] = bitvec[i] | bytechk[k];
-		j++;
+	fread(&vblock,32,1,disk01);
+	if(vblock.numblock == 0){
+		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
+		stat(rfosdisk.disk1,&s);
+		vblock.diskno = 0;
+		vblock.blocksize = 32;
+		vblock.numblock = s.st_size/vblock.blocksize;
+		vblock.bitvec_bl = vblock.numblock/8/vblock.blocksize;
+		vblock.file_ent_bl = vblock.numblock*0.05;
+		vblock.free = vblock.numblock-vblock.bitvec_bl-vblock.file_ent_bl-1;
+		vblock.numfile = 0;
+		vblock.inv_file = 0;
+		bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
+		guint i,j=0,k;
+		guint32 startblock = vblock.bitvec_bl+vblock.file_ent_bl+1;
+		for(i = 0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=startblock)goto filefmtchkpt;
+				bitvec[i] = bitvec[i] | bytechk[k];
+			j++;
+		}
 	}
-}
-filefmtchkpt:
-fseeko64(disk01,0,SEEK_SET);
-fwrite(&vblock,32,1,disk01);
-fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
-g_printf("FORMAT COMPLETE!\n");
-}
+	filefmtchkpt:
+	fseeko64(disk01,0,SEEK_SET);
+	fwrite(&vblock,32,1,disk01);
+	fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+	g_printf("FORMAT COMPLETE!\n");
+	}
 else{
-g_printf("FILE SYSTEM DETAIL....\n");
-g_printf("DISK NO:%d\n",vblock.diskno);
-g_printf("BLOCK SIZE:%d\n",vblock.blocksize);
-g_printf("NUMBLOCK:%d\n",vblock.numblock);
-g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock.bitvec_bl);
-g_printf("FILE ENTRY BLOCK COUNT:%d\n",vblock.file_ent_bl);
-g_printf("FREE:%d\n",vblock.free);
-g_printf("FILE COUNT:%d\n",vblock.numfile);
-g_printf("INVALID FILE:%d\n",vblock.inv_file);
-bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
-fread(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
-guint32 i,j=0,bituse=0,k;
-for(i = 0;;i++){
-	for(k=0;k<8;k++){
-		if(j>=vblock.numblock)goto filerdrchkpt;
-		if((bitvec[i] & bytechk[k]) == bytechk[k])bituse++;
-	j++;
+	g_printf("FILE SYSTEM DETAIL....\n");
+	g_printf("DISK NO:%d\n",vblock.diskno);
+	g_printf("BLOCK SIZE:%d\n",vblock.blocksize);
+	g_printf("NUMBLOCK:%d\n",vblock.numblock);
+	g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock.bitvec_bl);
+	g_printf("FILE ENTRY BLOCK COUNT:%d\n",vblock.file_ent_bl);
+	g_printf("FREE:%d\n",vblock.free);
+	g_printf("FILE COUNT:%d\n",vblock.numfile);
+	g_printf("INVALID FILE:%d\n",vblock.inv_file);
+	bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
+	fread(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+	guint32 i,j=0,bituse=0,k;
+	for(i = 0;;i++){
+		for(k=0;k<8;k++){
+			if(j>=vblock.numblock)goto filerdrchkpt;
+			if((bitvec[i] & bytechk[k]) == bytechk[k])bituse++;
+			j++;
+		}
 	}
-}
-filerdrchkpt:
-g_printf("NUM OF BLOCK USED:%d\n",bituse);
-FILE_ENT fe;
-FILE_ENT_INMEM *entry;
-g_printf("READ FILES:%d\n",vblock.numfile);
-guint feoff = vblock.bitvec_bl+1;
-fseeko64(disk01,feoff*32,SEEK_SET);
-for(i=0;i<vblock.numfile;i++){
-	fread(&fe,sizeof(FILE_ENT),1,disk01);
-	entry = g_new(FILE_ENT_INMEM,1);
-	entry->key = g_strdup(fe.key);
-	g_printf("KEY => %s\n",entry->key);
-	entry->size = fe.size;
-	g_printf("SIZE => %d\n",entry->size);
-	entry->atime = fe.atime;
-	entry->sblock = fe.sblock;
-	entry->valid = fe.valid;
-	g_printf("ATIME => %ld\n",entry->atime);
-	g_printf("SBLOCK => %d\n",entry->sblock);
-	g_printf("VALID => %d\n",entry->valid);
-	entry->fileno = i;
+	filerdrchkpt:
+	g_printf("NUM OF BLOCK USED:%d\n",bituse);
+	FILE_ENT fe;
+	FILE_ENT_INMEM *entry;
+	g_printf("READ FILES:%d\n",vblock.numfile);
+	guint feoff = vblock.bitvec_bl+1;
+	fseeko64(disk01,feoff*32,SEEK_SET);
+	for(i=0;i<vblock.numfile;i++){
+		fread(&fe,sizeof(FILE_ENT),1,disk01);
+		entry = g_new(FILE_ENT_INMEM,1);
+		entry->key = g_strdup(fe.key);
+		g_printf("KEY => %s\n",entry->key);
+		entry->size = fe.size;
+		g_printf("SIZE => %d\n",entry->size);
+		entry->atime = fe.atime;
+		entry->sblock = fe.sblock;
+		entry->valid = fe.valid;
+		g_printf("ATIME => %ld\n",entry->atime);
+		g_printf("SBLOCK => %d\n",entry->sblock);
+		g_printf("VALID => %d\n",entry->valid);
+		entry->fileno = i;
 
-	g_hash_table_insert(filetable,entry->key,entry);
-}
+		g_hash_table_insert(filetable,entry->key,entry);
+	}
 }
 fclose(disk01);
 }
