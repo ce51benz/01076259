@@ -330,8 +330,8 @@ getput_param *p = (getput_param*)pa;
 			//Check that whether number of block which already allocated is less than required
 			//If yes clear the rest of unused block as unallocated
 			//Else find way to allocate more
-			for(i=0;i<8;i++)
-				fe.key[i] = p->key[i];
+				for(i=0;i<8;i++)
+					fe.key[i] = p->key[i];
 				struct stat s;
 				stat(p->path,&s);
 				fe.size = s.st_size;
@@ -351,19 +351,144 @@ getput_param *p = (getput_param*)pa;
 					if(!tdata.next)break;
 					fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
 					fread(&tdata,vblock.blocksize,1,disk01);
-					}
-					fclose(fp);
+					}					
 					//Update fe block..... and write back!
+					fe.atime = time(NULL);
+					fe.valid = 1;
+					fe.sblock = hfentry->sblock;
+
+				 	hfentry->size = fe.size;
+					g_free(hfentry->key);
+					hfentry->key = g_strdup(fe.key);
+					hfentry->atime = fe.atime;
+					
+		fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);					
+					fwrite(&fe,sizeof(FILE_ENT),1,disk01);					
 					fclose(disk01);
 				}				
 				else if(ceil(hfentry->size*1.0/vblock.blocksize) < ceil(fe.size*1.0/vblock.blocksize)){
 					//this case must allocate additional block via find free block...
 					//Use similar procedure of normal case and do it!
-					//Update block for free value
+					//Update block for decreased free value,bitvec and fe block
+					FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
+					DBLOCK tdata;NODE *ptr;
+					tdata.next = hfentry->sblock;
+					do{
+						fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
+						fread(&tdata,vblock.blocksize,1,disk01);
+						if(head == NULL){
+							head = tail = g_new(NODE,1);
+							head->data = g_new(DBLOCK,1);
+							fread((head->data)->data,1,28,fp);
+							head->next = NULL;
+							(head->data)->next = tdata.next;
+						}
+						else{
+							ptr = g_new(NODE,1);
+							ptr->data = g_new(DBLOCK,1);
+							fread((head->data)->data,1,28,fp);
+							(ptr->data)->next = tdata.next;
+							tail->next = ptr;
+							tail = ptr;
+						}
+					}while(tdata.next);
+					
+					//The last block has invalid block no.(has no.0)
+					j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
+					for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
+						for(k=0;k<8;k++){
+							if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt; //0
+ 							if((bitvec[i] & bytechk[k]) == 0){	
+								ptr = g_new(NODE,1);
+								ptr->data = g_new(DBLOCK,1);
+								(ptr->data)->next = 0;
+								fread((ptr->data)->data,1,28,fp);
+								ptr->next = NULL;
+								(tail->data)->next = (i*8)+k;
+								tail->next = ptr;
+								tail = ptr;			
+								blockwrct++;
+								bitvec[i] = bitvec[i] | bytechk[k];
+							}
+						j++;
+						}
+					}			
+					//Write main data to disk
+					ptr = head;nextblock = hfentry->sblock;
+					while(ptr != NULL){
+						fseeko64(disk01,nextblock*32,SEEK_SET);
+						fwrite(ptr->data,vblock.blocksize,1,disk01);
+						nextblock = (ptr->data)->next;
+						ptr = ptr->next;
+					}
+					
+					fe.atime = time(NULL);
+					fe.sblock = hfentry->sblock;
+					fe.valid = 1;
+					
+					vblock.free = vblock.free - blockwrct;
+				
+		fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);				
+					fwrite(&fe,sizeof(FILE_ENT),1,disk01);
+					fseeko64(disk01,0,SEEK_SET);
+					fwrite(&vblock,vblock.blocksize,1,disk01);								
+					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+					g_free(hfentry->key);
+					fclose(disk01);
+					hfentry->key = g_strdup(fe.key);
+					hfentry->size = fe.size;
+					hfentry->atime = fe.atime;
 				}
 				else{
-					//this case must allocate block less than  
+					//this case must allocate block less than the old one
+					//So if allocate until end of desired file
+					//The rest of old file will freed
+					//Update fe block and bitvec!
+					//------ also update vblock to increase free
+					FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+					DBLOCK tdata;guint tempnext;
+					fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
+					fread(&tdata,vblock.blocksize,1,disk01);
+					while(TRUE){
+						fread(tdata.data,1,28,fp);
+						fseeko64(disk01,-vblock.blocksize,SEEK_CUR);
+						if(!feof(fp)){
+							fwrite(&tdata,vblock.blocksize,1,disk01);
+							fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
+							fread(&tdata,vblock.blocksize,1,disk01);
+						}
+						else{
+							tempnext = tdata.next;
+							tdata.next = 0;
+							fwrite(&tdata,vblock.blocksize,1,disk01);
+							break;
+						}
+					}
+					
+					while(tempnext){
+						fseeko64(disk01,tempnext*vblock.blocksize,SEEK_SET);
+						fread(&tdata,vblock.blocksize,1,disk01);
+						bitvec[tempnext/8] = bitvec[tempnext/8] & (~bytechk[tempnext%8]);
+						tempnext = tdata.next;
+					}
+					fe.atime = time(NULL);
+					fe.valid = 1;
+					fe.sblock = hfentry->sblock;
+					
+					vblock.free = vblock.free + (ceil(hfentry->size*1.0/vblock.blocksize) - ceil(fe.size*1.0/vblock.blocksize));
+					g_free(hfentry->key);
+					hfentry->key = g_strdup(fe.key);
+					hfentry->size = fe.size;
+					hfentry->atime = fe.atime;
+
+					fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
+					fwrite(&fe,sizeof(FILE_ENT),1,disk01);
+					fseeko64(disk01,0,SEEK_SET);
+					fwrite(&vblock.free,vblock.blocksize,1,disk01);	
+					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);				
+					fclose(disk01);					
 				}
+				fclose(fp);
 			}
 			else{
 			//Case file not valid
@@ -414,9 +539,7 @@ getput_param *p = (getput_param*)pa;
 					nextblock = (ptr->data)->next;
 					ptr = ptr->next;
 				}
-				//WRITE FREE BIT VEC TO IMG DISK
-				fseeko64(disk01,32,SEEK_SET);
-				fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
+
 				fe.valid = 1;
 				fe.atime = time(NULL);
 			
@@ -434,6 +557,7 @@ getput_param *p = (getput_param*)pa;
 				fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 				fseeko64(disk01,0,SEEK_SET);
 				fwrite(&vblock,32,1,disk01);
+				fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 
 				g_printf("KEY => %s\n",fe.key);
 				g_printf("SIZE => %d\n",fe.size);
@@ -441,7 +565,7 @@ getput_param *p = (getput_param*)pa;
 				g_printf("SBLOCK => %d\n",fe.sblock);
 				g_printf("VALID => %d\n",fe.valid);
 				fclose(disk01);
-			}		
+			}
 		}
     		err = 0;
 		}
