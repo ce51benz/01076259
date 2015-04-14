@@ -181,6 +181,7 @@ getput_param *p = (getput_param*)pa;
 	else err = ENOENT;
 	}
 
+getchkpt:
 rfos_complete_get(p->obj,p->inv,err);
 /*DO GARBAGE COLLECTION*/
 g_free(p->path);
