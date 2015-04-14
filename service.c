@@ -106,11 +106,13 @@ else{
 			fprintf(fp,"%s",(char*)arr->pdata[i]);
 			i++;
 			if(i<arr->len)fputc(',',fp);
+			if(ferror(fp)){err=errno;fclose(fp);goto searchchkpt;}
 		}
 		fclose(fp);err=0;
 	}
 	else err = ENOENT;
 }
+searchchkpt:
 rfos_complete_search(p->obj,p->inv,err);
 //DO GARBAGE COLLECTION
 if(arr != NULL)
@@ -133,6 +135,8 @@ getput_param *p = (getput_param*)pa;
 	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){ //also check for valid
 		if(!entry->valid)err = ENOENT;
 		else{
+			//Create directory for output file....
+			//GFile *files = g_file_new_for_path(p->path);
 			FILE *fp = fopen64(p->path,"wb");
 			FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 			DBLOCK data;
@@ -141,14 +145,20 @@ getput_param *p = (getput_param*)pa;
 				fseeko64(disk01,nextblock*32,SEEK_SET);
 				fread(&data,32,1,disk01);
 				if(!data.next){
-					if(entry->size % 28 != 0)
+					if(entry->size % 28 != 0){
 						fwrite(data.data,1,entry->size % 28,fp);
-					else
+						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);goto getchkpt;}
+					}
+					else{
 						fwrite(data.data,1,28,fp);
+						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);goto getchkpt;}
+					    }
 					break;
 				}
-				else
+				else{
 					fwrite(data.data,1,28,fp);
+					if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);goto getchkpt;}
+				    }
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
 				nextblock = data.next;
 			}
@@ -170,7 +180,6 @@ getput_param *p = (getput_param*)pa;
 	}
 	else err = ENOENT;
 	}
-
 
 rfos_complete_get(p->obj,p->inv,err);
 /*DO GARBAGE COLLECTION*/
@@ -898,7 +907,6 @@ rfosdisk.numdisk = argc - 1;
     /* Start the main loop */
 //Initialized RFOS (FORMATTING) via another thread
 pthread_create(&test,NULL,dummywork,NULL);
-
     g_main_loop_run (loop);
 }
 else{
