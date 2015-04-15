@@ -12,12 +12,17 @@ int ready = 0;
 pthread_mutex_t lock;
 GHashTable *filetable;
 gchar *bitvec;
-GArray *actoft;
+GArray *actoft,*rfosoft;
 int bytechk[8] = {0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01};
 typedef struct _aofe{
 guint64 fid;
 char mode;
 }AOF_ENT;
+
+typedef struct _rfosofe{
+char key[9];
+char mode;
+}RFOSOFT_ENT;
 typedef struct _vcb{
 guint32 diskno;
 guint32 numblock;
@@ -84,10 +89,20 @@ gboolean isOpenForRead(guint64 fid){
 int i;AOF_ENT ent;
 for(i=0;i<actoft->len;i++){
 	ent = g_array_index(actoft,AOF_ENT,i);
-	if(ent.fid==fid&&ent.mode=='R')return TRUE;
+	if(ent.fid==fid&&ent.mode=='R'){return TRUE;}
 }
 return FALSE;
 }
+
+gboolean rfosIsOpenForRead(char *key){
+int i;RFOSOFT_ENT ent;
+for(i=0;i<rfosoft->len;i++){
+	ent = g_array_index(rfosoft,RFOSOFT_ENT,i);
+	if(!g_strcmp0(ent.key,key)&&ent.mode=='R')return TRUE;
+}
+return FALSE;
+}
+
 
 void remOpenForRead(guint64 fid){
 int i;AOF_ENT ent;
@@ -95,6 +110,16 @@ for(i=0;i<actoft->len;i++){
 	ent = g_array_index(actoft,AOF_ENT,i);
 	if(ent.fid==fid&&ent.mode=='R')
 		{g_array_remove_index(actoft,i);break;}
+}
+}
+
+void rfosRemOpenForRead(char *key){
+int i;RFOSOFT_ENT ent;
+for(i=0;i<rfosoft->len;i++){
+	ent = g_array_index(rfosoft,RFOSOFT_ENT,i);
+	if(!g_strcmp0(ent.key,key)&&ent.mode=='R'){
+		{g_array_remove_index(rfosoft,i);break;}
+	}
 }
 }
 
@@ -107,12 +132,32 @@ for(i=0;i<actoft->len;i++){
 return FALSE;
 }
 
+gboolean rfosIsOpenForWrite(char *key){
+int i;RFOSOFT_ENT ent;
+for(i=0;i<rfosoft->len;i++){
+	ent = g_array_index(rfosoft,RFOSOFT_ENT,i);
+	if(!g_strcmp0(ent.key,key)&&ent.mode=='W')return TRUE;
+}
+return FALSE;
+}
+
+
 void remOpenForWrite(guint64 fid){
 int i;AOF_ENT ent;
 for(i=0;i<actoft->len;i++){
 	ent = g_array_index(actoft,AOF_ENT,i);
 	if(ent.fid==fid&&ent.mode=='W')
 		{g_array_remove_index(actoft,i);break;}
+}
+}
+
+void rfosRemOpenForWrite(char *key){
+int i;RFOSOFT_ENT ent;
+for(i=0;i<rfosoft->len;i++){
+	ent = g_array_index(rfosoft,RFOSOFT_ENT,i);
+	if(!g_strcmp0(ent.key,key)&&ent.mode=='W'){
+		{g_array_remove_index(rfosoft,i);break;}
+	}
 }
 }
 
@@ -189,7 +234,7 @@ pthread_exit(0);
 }
 //worker function for get cmd
 void *do_handle_get(void *pa){
-guint err;
+guint err;int i;
 FILE_ENT_INMEM *entry;
 guint32 nextblock;
 getput_param *p = (getput_param*)pa;
@@ -203,14 +248,27 @@ getput_param *p = (getput_param*)pa;
 		else{
 			//Create directory for output file....
 			//GFile *files = g_file_new_for_path(p->path);
+			//-------lock1--------------
+			if(rfosIsOpenForWrite(p->key)){
+				err = EAGAIN;goto getchkpt;
+			}
+			else{
+				RFOSOFT_ENT rent;
+				for(i = 0;i<8;i++)
+					rent.key[i] = p->key[i];
+				rent.key[8] = '\0';
+				rent.mode = 'R';
+ 				g_array_append_val(rfosoft,rent);
+			}
+			//--------------------------
 			FILE *fp;
 			struct stat fst;
-			//-------lock--------------
+			//-------lock2--------------
 			if(!stat(p->path,&fst)){
 				if(isOpenForRead(fst.st_ino) || isOpenForWrite(fst.st_ino)){
 					err = EAGAIN;goto getchkpt;
 				}
-			else{
+				else{	
 				fp = fopen64(p->path,"wb");
 				stat(p->path,&fst);
 				AOF_ENT ent;
@@ -220,6 +278,7 @@ getput_param *p = (getput_param*)pa;
 				}
 			}
 			else{
+
 				fp = fopen64(p->path,"wb");
 				stat(p->path,&fst);
 				AOF_ENT ent;
@@ -228,7 +287,6 @@ getput_param *p = (getput_param*)pa;
 				g_array_append_val(actoft,ent);
 			}
 			//-------------------------
-			fp = fopen64(p->path,"wb");
 			FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 			DBLOCK data;
 			nextblock = entry->sblock;
@@ -238,17 +296,20 @@ getput_param *p = (getput_param*)pa;
 				if(!data.next){
 					if(entry->size % 28 != 0){
 						fwrite(data.data,1,entry->size % 28,fp);
-						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);goto getchkpt;}
+						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
+						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					}
 					else{
 						fwrite(data.data,1,28,fp);
-						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);goto getchkpt;}
+						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
+						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					    }
 					break;
 				}
 				else{
 					fwrite(data.data,1,28,fp);
-					if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);goto getchkpt;}
+					if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
+					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
 				nextblock = data.next;
@@ -265,7 +326,7 @@ getput_param *p = (getput_param*)pa;
 			fe.valid = entry->valid;
 			fseeko64(disk01,(((vblock.bitvec_bl+1)*32) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 			fwrite(&fe,sizeof(FILE_ENT),1,disk01);
-			fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);
+			fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);
     			err = 0;
 		}
 	}
@@ -297,7 +358,7 @@ getput_param *p = (getput_param*)pa;
 	struct stat fst;
 	//-----------------lock-----------------
 	if(stat(p->path,&fst))err = ENOENT;
-	else{	
+	else{
 		if(isOpenForWrite(fst.st_ino)){err = EAGAIN;goto putchkpt;}
 		AOF_ENT ent;
 		ent.fid = fst.st_ino;
@@ -305,8 +366,22 @@ getput_param *p = (getput_param*)pa;
 		g_array_append_val(actoft,ent);
 		//--------------------------------------
 		FILE *fp = fopen64(p->path,"r");
+				
 			if((hfentry = g_hash_table_lookup(filetable,p->key)) == NULL)
 			{
+				//----------------lockforkey--------------
+				if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
+					err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+				}
+				else{
+					RFOSOFT_ENT rent;
+					for(i = 0;i<8;i++)
+						rent.key[i] = p->key[i];
+					rent.key[8] = '\0';
+					rent.mode = 'W';
+					g_array_append_val(rfosoft,rent);
+				}
+				//----------------------------------------
 				for(i=0;i<8;i++)
 					fe.key[i] = p->key[i];
 				fe.size = fst.st_size;
@@ -316,6 +391,7 @@ getput_param *p = (getput_param*)pa;
 					fclose(fp);
 					err = ENOSPC;
 					remOpenForRead(fst.st_ino);
+					rfosRemOpenForWrite(p->key);
 					goto putchkpt;
 				}
 				j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
@@ -426,12 +502,14 @@ getput_param *p = (getput_param*)pa;
 					fseeko64(disk01,0,SEEK_SET);
 					fwrite(&vblock,32,1,disk01);
 				}
+				g_printf("NORMAL CASE\n");
 				g_printf("KEY => %s\n",fe.key);
 				g_printf("SIZE => %d\n",fe.size);
 				g_printf("ATIME => %ld\n",fe.atime);
 				g_printf("SBLOCK => %d\n",fe.sblock);
 				g_printf("VALID => %d\n",fe.valid);
 				fclose(disk01);
+				rfosRemOpenForWrite(p->key);
 			}
 		else
 			{ 
@@ -445,42 +523,61 @@ getput_param *p = (getput_param*)pa;
 						fe.key[i] = p->key[i];
 					fe.size = fst.st_size;
 					fe.key[8] = '\0';
+					//----------------lockforkey--------------
+					if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
+						err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+					}
+					else{
+						RFOSOFT_ENT rent;
+						for(i = 0;i<8;i++)
+							rent.key[i] = p->key[i];
+						rent.key[8] = '\0';
+						rent.mode = 'W';
+ 						g_array_append_val(rfosoft,rent);
+					}
+					//----------------------------------------
 					//Check for avail block.
 					if(ceil(hfentry->size*1.0/(vblock.blocksize-4)) == ceil(fe.size*1.0/(vblock.blocksize-4))){
 						//this case can replace data instantly!
 						//no need to update vblock
 						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 						DBLOCK tdata;
+						nextblock = hfentry->sblock;
 						fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
 						fread(&tdata,vblock.blocksize,1,disk01);
 						while(TRUE){
 						fread(tdata.data,1,28,fp);
-						fseeko64(disk01,-vblock.blocksize,SEEK_CUR);
-					fwrite(&tdata,vblock.blocksize,1,disk01);
+						fseeko64(disk01,nextblock*vblock.blocksize,SEEK_SET);
+						fwrite(&tdata,vblock.blocksize,1,disk01);
 						if(!tdata.next)break;
 						fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
+						nextblock = tdata.next;
 						fread(&tdata,vblock.blocksize,1,disk01);
-						}					
+						}		
 						//Update fe block..... and write back!
 						fe.atime = time(NULL);
 						fe.valid = 1;
 						fe.sblock = hfentry->sblock;
-	
 					 	hfentry->size = fe.size;
-						g_free(hfentry->key);
-						hfentry->key = g_strdup(fe.key);
 						hfentry->atime = fe.atime;
 					
 			fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);					
 						fwrite(&fe,sizeof(FILE_ENT),1,disk01);					
-						fclose(disk01);
-					}				
+						fclose(disk01);rfosRemOpenForWrite(p->key);
+						g_printf("Case htb found with eq block size req\n");	
+						g_printf("KEY => %s\n",fe.key);
+						g_printf("SIZE => %d\n",fe.size);
+						g_printf("ATIME => %ld\n",fe.atime);
+						g_printf("SBLOCK => %d\n",fe.sblock);
+						g_printf("VALID => %d\n",fe.valid);	
+					}
 					else if(ceil(hfentry->size*1.0/(vblock.blocksize-4)) < ceil(fe.size*1.0/(vblock.blocksize-4))){
 					//this case must allocate additional block via find free block...
 					//Use similar procedure of normal case and do it!
 					//Update block for decreased free value,bitvec and fe block
 						if((ceil(fe.size*1.0 / (vblock.blocksize-4))-ceil(hfentry->size*1.0/(vblock.blocksize-4))) > vblock.free){
-							fclose(fp);err = ENOSPC;remOpenForRead(fst.st_ino);goto putchkpt;			
+							fclose(fp);err = ENOSPC;
+							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
 						}
 						FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
 						DBLOCK tdata;NODE *ptr;
@@ -546,11 +643,16 @@ getput_param *p = (getput_param*)pa;
 						fseeko64(disk01,0,SEEK_SET);
 					fwrite(&vblock,vblock.blocksize,1,disk01);								
 						fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
-						g_free(hfentry->key);
 						fclose(disk01);
-						hfentry->key = g_strdup(fe.key);
+						rfosRemOpenForWrite(p->key);
 						hfentry->size = fe.size;
 						hfentry->atime = fe.atime;
+						g_printf("Case htb found with more block size req\n");	
+						g_printf("KEY => %s\n",fe.key);
+						g_printf("SIZE => %d\n",fe.size);
+						g_printf("ATIME => %ld\n",fe.atime);
+						g_printf("SBLOCK => %d\n",fe.sblock);
+						g_printf("VALID => %d\n",fe.valid);	
 					}
 					else{
 						//this case must allocate block less than the old one
@@ -560,13 +662,15 @@ getput_param *p = (getput_param*)pa;
 						//------ also update vblock to increase free
 						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
 						DBLOCK tdata;guint tempnext;
+						nextblock = hfentry->sblock;
 						fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
 						fread(&tdata,vblock.blocksize,1,disk01);
 						while(TRUE){
 							fread(tdata.data,1,28,fp);
-							fseeko64(disk01,-vblock.blocksize,SEEK_CUR);
+							fseeko64(disk01,nextblock*vblock.blocksize,SEEK_SET);
 							if(!feof(fp)){
 								fwrite(&tdata,vblock.blocksize,1,disk01);
+								nextblock = tdata.next;
 								fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
 								fread(&tdata,vblock.blocksize,1,disk01);
 							}
@@ -589,8 +693,6 @@ getput_param *p = (getput_param*)pa;
 						fe.sblock = hfentry->sblock;
 					
 					vblock.free = vblock.free + (ceil(hfentry->size*1.0/vblock.blocksize) - ceil(fe.size*1.0/vblock.blocksize));
-						g_free(hfentry->key);
-						hfentry->key = g_strdup(fe.key);
 						hfentry->size = fe.size;
 						hfentry->atime = fe.atime;
 
@@ -599,19 +701,40 @@ getput_param *p = (getput_param*)pa;
 						fseeko64(disk01,0,SEEK_SET);
 						fwrite(&vblock.free,vblock.blocksize,1,disk01);	
 						fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);				
-						fclose(disk01);					
+						fclose(disk01);
+						rfosRemOpenForWrite(p->key);
+					g_printf("Case htb found with less block size req\n");	
+					g_printf("KEY => %s\n",fe.key);
+					g_printf("SIZE => %d\n",fe.size);
+					g_printf("ATIME => %ld\n",fe.atime);
+					g_printf("SBLOCK => %d\n",fe.sblock);
+					g_printf("VALID => %d\n",fe.valid);				
 					}
-					fclose(fp);remOpenForRead(fst.st_ino);
+					fclose(fp);remOpenForRead(fst.st_ino);			
 				}
 				else{
 				//Case file not valid
 				//Do something similar case HTB not found but this time you can write desired file entry to desired location faster. 
+					//----------------lockforkey--------------
+					if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
+						err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+					}
+					else{
+						RFOSOFT_ENT rent;
+						for(i = 0;i<8;i++)
+							rent.key[i] = p->key[i];
+						rent.key[8] = '\0';
+						rent.mode = 'W';
+ 						g_array_append_val(rfosoft,rent);
+					}
+					//----------------------------------------					
 					for(i=0;i<8;i++)
 						fe.key[i] = p->key[i];
 					fe.size = fst.st_size;
 					fe.key[8] = '\0';
 					if(ceil(fe.size*1.0 / (vblock.blocksize-4)) > vblock.free){
-						fclose(fp);err = ENOSPC;remOpenForRead(fst.st_ino);goto putchkpt;
+						fclose(fp);err = ENOSPC;
+						remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;
 					} 
 					//Check for avail. block
 					j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
@@ -673,13 +796,14 @@ getput_param *p = (getput_param*)pa;
 					fseeko64(disk01,0,SEEK_SET);
 					fwrite(&vblock,32,1,disk01);
 					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
-	
+					g_printf("Case invalid htb found\n");
 					g_printf("KEY => %s\n",fe.key);
 					g_printf("SIZE => %d\n",fe.size);
 					g_printf("ATIME => %ld\n",fe.atime);
 					g_printf("SBLOCK => %d\n",fe.sblock);
 					g_printf("VALID => %d\n",fe.valid);
 					fclose(disk01);
+					rfosRemOpenForWrite(p->key);
 				}
 			}
 	    		err = 0;
@@ -732,7 +856,7 @@ pthread_exit(0);
 }
 
 void *do_handle_remove(void *pa){
-guint err;
+guint err;int i;
 key_param *p = (key_param*)pa; 
 FILE_ENT_INMEM *fentry;
 FILE_ENT fe;
@@ -744,6 +868,19 @@ else{
 	if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
 		if(!fentry->valid)err = ENOENT; // if file entry is already invalid return ENOENT
 		else{
+			//----------------lockforkey--------------
+			if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
+				err = EAGAIN;goto remchkpt;
+			}
+			else{
+				RFOSOFT_ENT rent;
+				for(i = 0;i<8;i++)
+					rent.key[i] = p->key[i];
+				rent.key[8] = '\0';
+				rent.mode = 'W';
+ 				g_array_append_val(rfosoft,rent);
+			}
+			//----------------------------------------
 			disk01 = fopen64(rfosdisk.disk1,"rb+");
 			DBLOCK data;
 			data.next = fentry->sblock;
@@ -773,13 +910,14 @@ else{
 			fseeko64(disk01,32,SEEK_SET);
 			fwrite(bitvec,1,(vblock.bitvec_bl*vblock.blocksize),disk01);		
 			fclose(disk01);
+			rfosRemOpenForWrite(p->key);
 			err = 0;
 		}		
 	}
 	else
 		err = ENOENT;	
 }
-
+remchkpt:
 rfos_complete_remove(p->obj,p->inv,err);
 //DO GARBAGE COLLECTION
 g_free(p->key);
@@ -971,7 +1109,8 @@ pthread_exit(0);
 int main (int argc,char **argv)
 {
 pthread_t test;
-actoft = g_array_new(TRUE,FALSE,sizeof(guint64));
+actoft = g_array_new(TRUE,FALSE,sizeof(AOF_ENT));
+rfosoft = g_array_new(TRUE,FALSE,sizeof(RFOSOFT_ENT));
 if(argc > 1){
 rfosdisk.numdisk = argc - 1;
 	if(argc == 2){
