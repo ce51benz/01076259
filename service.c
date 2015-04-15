@@ -196,6 +196,13 @@ else{
 			}
 			else{
 			fp = fopen64(p->path,"wb");
+			if(!fp){
+				if(g_mkdir_with_parents(p->path,0777)){
+					err = ENOENT;goto searchchkpt;
+				}
+				rmdir(p->path);
+				fp = fopen64(p->path,"wb");
+			}
 			stat(p->path,&fst);
 			AOF_ENT ent;
 			ent.fid = fst.st_ino;
@@ -205,6 +212,13 @@ else{
 		}
 		else{
 			fp = fopen64(p->path,"wb");
+			if(!fp){
+				if(g_mkdir_with_parents(p->path,0777)){
+					err = ENOENT;goto searchchkpt;
+				}
+				rmdir(p->path);
+				fp = fopen64(p->path,"wb");
+			}
 			stat(p->path,&fst);
 			AOF_ENT ent;
 			ent.fid = fst.st_ino;
@@ -269,17 +283,30 @@ getput_param *p = (getput_param*)pa;
 					err = EAGAIN;goto getchkpt;
 				}
 				else{	
-				fp = fopen64(p->path,"wb");
-				stat(p->path,&fst);
-				AOF_ENT ent;
-				ent.fid = fst.st_ino;
-				ent.mode = 'W';
-				g_array_append_val(actoft,ent);
+					fp = fopen64(p->path,"wb");
+					if(!fp){
+						if(g_mkdir_with_parents(p->path,0777)){
+							err = ENOENT;rfosRemOpenForRead(p->key);goto getchkpt;
+					}
+					rmdir(p->path);
+					fp = fopen64(p->path,"wb");
+					}				
+					stat(p->path,&fst);
+					AOF_ENT ent;
+					ent.fid = fst.st_ino;
+					ent.mode = 'W';
+					g_array_append_val(actoft,ent);
 				}
 			}
 			else{
-
 				fp = fopen64(p->path,"wb");
+				if(!fp){
+					if(g_mkdir_with_parents(p->path,0777)){
+						err = ENOENT;rfosRemOpenForRead(p->key);goto getchkpt;
+					}
+					rmdir(p->path);
+					fp = fopen64(p->path,"wb");
+				}				
 				stat(p->path,&fst);
 				AOF_ENT ent;
 				ent.fid = fst.st_ino;
@@ -1111,6 +1138,8 @@ int main (int argc,char **argv)
 pthread_t test;
 actoft = g_array_new(TRUE,FALSE,sizeof(AOF_ENT));
 rfosoft = g_array_new(TRUE,FALSE,sizeof(RFOSOFT_ENT));
+
+
 if(argc > 1){
 rfosdisk.numdisk = argc - 1;
 	if(argc == 2){
