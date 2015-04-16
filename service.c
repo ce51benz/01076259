@@ -373,7 +373,9 @@ pthread_exit(0);
 //worker function for put cmd
 void *do_handle_put(void *pa){
 guint err;
-NODE *tail =NULL,*head = NULL;
+gboolean isFirst = TRUE;
+GArray *dataarr = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
+DBLOCK cur;
 guint32 i,blockloc,j,blockwrct=0,nextblock,k;
 FILE_ENT_INMEM *hfentry;FILE_ENT fe;
 getput_param *p = (getput_param*)pa;
@@ -424,26 +426,19 @@ getput_param *p = (getput_param*)pa;
 				j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 				for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
-						NODE *ptr;
 						if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt; //0
  						if((bitvec[i] & bytechk[k]) == 0){
-							if(head == NULL){
-								head = tail = g_new(NODE,1);
-								head->data = g_new(DBLOCK,1);
-								(head->data)->next = 0;
-								fread((head->data)->data,1,28,fp);
-								head->next = NULL;
+							if(isFirst){
+								cur.next = 0;
+								fread(cur.data,1,28,fp);
 								blockloc = (i*8)+k;
+								isFirst = FALSE;
 							}
 							else{
-								ptr = g_new(NODE,1);
-								ptr->data = g_new(DBLOCK,1);
-								(ptr->data)->next = 0;
-								fread((ptr->data)->data,1,28,fp);
-								ptr->next = NULL;
-								(tail->data)->next = (i*8)+k;
-								tail->next = ptr;
-								tail = ptr;			
+								cur.next = (i*8)+k;
+								g_array_append_val(dataarr,cur);
+								fread(cur.data,1,28,fp);
+								cur.next = 0;			
 							}
 						blockwrct++;
 						bitvec[i] = bitvec[i] | bytechk[k];
@@ -455,21 +450,23 @@ getput_param *p = (getput_param*)pa;
 				//CONTINUED
 				fclose(fp);
 				remOpenForRead(fst.st_ino);
-				nextblock = fe.sblock = blockloc;NODE *ptr = head;
+				g_array_append_val(dataarr,cur);
+				
+				nextblock = fe.sblock = blockloc;
 				FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
 				//fseeko64(disk01,nextblock*32,SEEK_CUR);
 				//WRITE DATA TO IMG DISK
 				//GFile *files = g_file_new_for_path(rfosdisk.disk1);
 				//GFileIOStream * fpt = g_file_open_readwrite(files,NULL,NULL);
 				//GOutputStream * stream = g_io_stream_get_output_stream((GIOStream*)fpt);
-			
-				while(ptr != NULL){
+				for(i = 0;i<dataarr->len;i++){
 					fseeko64(disk01,nextblock*32,SEEK_SET);
-					fwrite(ptr->data,32,1,disk01);
-					//fseeko64(disk01,((ptr->data)->next-nextblock)*32,SEEK_CUR);
-					nextblock = (ptr->data)->next;
-					ptr = ptr->next;
-				}/*
+					cur = g_array_index(dataarr,DBLOCK,i);
+					fwrite(&cur,32,1,disk01);
+					//fseeko64(disk01,(cur.next-nextblock+1)*32,SEEK_CUR);
+					nextblock = cur.next;
+				}
+				/*
 				while(ptr != NULL){				
 					g_output_stream_write(stream,ptr->data,32,NULL,NULL);
 					g_seekable_seek((GSeekable*)stream, ((ptr->data)->next-nextblock)*32,G_SEEK_CUR,NULL,NULL);
@@ -607,27 +604,14 @@ getput_param *p = (getput_param*)pa;
 							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
 						}
 						FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
-						DBLOCK tdata;NODE *ptr;
-						tdata.next = hfentry->sblock;
+						cur.next = hfentry->sblock;
 						do{
-							fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
-							fread(&tdata,vblock.blocksize,1,disk01);
-							if(head == NULL){
-								head = tail = g_new(NODE,1);
-								head->data = g_new(DBLOCK,1);
-								fread((head->data)->data,1,28,fp);
-								head->next = NULL;
-								(head->data)->next = tdata.next;
-							}
-							else{
-								ptr = g_new(NODE,1);
-								ptr->data = g_new(DBLOCK,1);
-								fread((head->data)->data,1,28,fp);
-								(ptr->data)->next = tdata.next;
-								tail->next = ptr;
-								tail = ptr;
-							}
-						}while(tdata.next);
+							fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							fread(&cur,vblock.blocksize,1,disk01);
+							fread(cur.data,1,28,fp);
+							if(cur.next)
+								g_array_append_val(dataarr,cur);
+						}while(cur.next);
 					
 						//The last block has invalid block no.(has no.0)
 						j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
@@ -635,14 +619,10 @@ getput_param *p = (getput_param*)pa;
 							for(k=0;k<8;k++){
 								if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt3; //0
  								if((bitvec[i] & bytechk[k]) == 0){	
-									ptr = g_new(NODE,1);
-									ptr->data = g_new(DBLOCK,1);
-									(ptr->data)->next = 0;
-									fread((ptr->data)->data,1,28,fp);
-									ptr->next = NULL;
-									(tail->data)->next = (i*8)+k;
-									tail->next = ptr;
-									tail = ptr;			
+									cur.next = (i*8)+k;
+									g_array_append_val(dataarr,cur);
+									cur.next = 0;
+									fread(cur.data,1,28,fp);		
 									blockwrct++;
 									bitvec[i] = bitvec[i] | bytechk[k];
 								}
@@ -650,13 +630,15 @@ getput_param *p = (getput_param*)pa;
 							}
 						}			
 						freeblkrwchkpt3:
+						g_array_append_val(dataarr,cur);
 						//Write main data to disk
-						ptr = head;nextblock = hfentry->sblock;
-						while(ptr != NULL){
+						nextblock = hfentry->sblock;
+						for(i = 0;i<dataarr->len;i++){
 							fseeko64(disk01,nextblock*32,SEEK_SET);
-							fwrite(ptr->data,vblock.blocksize,1,disk01);
-							nextblock = (ptr->data)->next;
-							ptr = ptr->next;
+							cur = g_array_index(dataarr,DBLOCK,i);
+							fwrite(&cur,32,1,disk01);
+							//fseeko64(disk01,(cur.next-nextblock+1)*32,SEEK_CUR);
+							nextblock = cur.next;
 						}
 			
 						fe.atime = time(NULL);
@@ -726,7 +708,7 @@ getput_param *p = (getput_param*)pa;
 					fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
 						fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 						fseeko64(disk01,0,SEEK_SET);
-						fwrite(&vblock.free,vblock.blocksize,1,disk01);	
+						fwrite(&vblock,vblock.blocksize,1,disk01);	
 						fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);				
 						fclose(disk01);
 						rfosRemOpenForWrite(p->key);
@@ -769,23 +751,17 @@ getput_param *p = (getput_param*)pa;
 						for(k=0;k<8;k++){
 							if(j>=vblock.numblock || feof(fp))goto freeblkrwchkpt2; //0
 	 						if((bitvec[i] & bytechk[k]) == 0){
-								if(head == NULL){
-									head = tail = g_new(NODE,1);
-									head->data = g_new(DBLOCK,1);
-									(head->data)->next = 0;
-									fread((head->data)->data,1,28,fp);
-									head->next = NULL;
-									blockloc = (i*8)+k;
+								if(isFirst){
+								cur.next = 0;
+								fread(cur.data,1,28,fp);
+								blockloc = (i*8)+k;
+								isFirst = FALSE;
 								}
 								else{
-									NODE *ptr = g_new(NODE,1);
-									ptr->data = g_new(DBLOCK,1);
-									(ptr->data)->next = 0;
-									fread((ptr->data)->data,1,28,fp);
-									ptr->next = NULL;
-									(tail->data)->next = (i*8)+k;
-									tail->next = ptr;
-									tail = ptr;			
+								cur.next = (i*8)+k;
+								g_array_append_val(dataarr,cur);
+								fread(cur.data,1,28,fp);
+								cur.next = 0;			
 								}
 							blockwrct++;
 							bitvec[i] = bitvec[i] | bytechk[k];
@@ -796,13 +772,15 @@ getput_param *p = (getput_param*)pa;
 					freeblkrwchkpt2:
 					fclose(fp);
 					remOpenForRead(fst.st_ino);
-					nextblock = fe.sblock = blockloc;NODE *ptr = head;
+					g_array_append_val(dataarr,cur);
+					nextblock = fe.sblock = blockloc;
 					FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
-					while(ptr != NULL){
+					for(i = 0;i<dataarr->len;i++){
 						fseeko64(disk01,nextblock*32,SEEK_SET);
-						fwrite(ptr->data,32,1,disk01);
-						nextblock = (ptr->data)->next;
-						ptr = ptr->next;
+						cur = g_array_index(dataarr,DBLOCK,i);
+						fwrite(&cur,32,1,disk01);
+						//fseeko64(disk01,(cur.next-nextblock+1)*32,SEEK_CUR);
+						nextblock = cur.next;
 					}
 	
 					fe.valid = 1;
@@ -811,8 +789,6 @@ getput_param *p = (getput_param*)pa;
 					vblock.free = vblock.free - blockwrct;
 					vblock.inv_file = vblock.inv_file - 1;
 					
-					g_free(hfentry->key);
-					hfentry->key = g_strdup(fe.key);
 					hfentry->size = fe.size;
 					hfentry->atime = fe.atime;
 					hfentry->sblock = fe.sblock;
@@ -838,18 +814,8 @@ getput_param *p = (getput_param*)pa;
 	}
 putchkpt:
 rfos_complete_put(p->obj,p->inv,err);
-NODE *ptr = head,*temp;
 /*DO GARBAGE COLLECTION*/
-while(ptr != NULL){
-	//g_free((ptr->data)->data);
-	g_free(ptr->data);
-	//g_object_unref(ptr->data);
-	//g_free(ptr); //
-	temp = ptr;
-	ptr = ptr->next;
-	g_free(temp);
-	}
-
+g_array_free(dataarr,TRUE);
 g_free(p->path);
 g_free(p->key);
 g_free(p);
@@ -862,7 +828,6 @@ guint32 size = 0;
 guint err;
 guint64 atime = 0;
 FILE_ENT_INMEM *fentry;
-
 if(!ready)err = EBUSY;
 else if(strlen(p->key) != 8)err = ENAMETOOLONG;
 else if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
