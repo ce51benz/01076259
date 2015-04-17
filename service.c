@@ -315,31 +315,33 @@ getput_param *p = (getput_param*)pa;
 			}
 			//-------------------------
 			FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
-			DBLOCK data;
-			nextblock = entry->sblock;
+			DBLOCK cur;
+			cur.next = entry->sblock;
+			nextblock = 0;
 			while(TRUE){
-				fseeko64(disk01,nextblock*32,SEEK_SET);
-				fread(&data,32,1,disk01);
-				if(!data.next){
+				if((nextblock+1)-cur.next) 
+					fseeko64(disk01,cur.next*32,SEEK_SET);
+				nextblock = cur.next;
+				fread(&cur,32,1,disk01);
+				if(!cur.next){
 					if(entry->size % 28 != 0){
-						fwrite(data.data,1,entry->size % 28,fp);
+						fwrite(cur.data,1,entry->size % 28,fp);
 						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					}
 					else{
-						fwrite(data.data,1,28,fp);
+						fwrite(cur.data,1,28,fp);
 						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					    }
 					break;
 				}
 				else{
-					fwrite(data.data,1,28,fp);
+					fwrite(cur.data,1,28,fp);
 					if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
-				nextblock = data.next;
 			}
 			entry->atime = time(NULL);
 			FILE_ENT fe;
@@ -567,19 +569,28 @@ getput_param *p = (getput_param*)pa;
 						//this case can replace data instantly!
 						//no need to update vblock
 						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
-						DBLOCK tdata;
-						nextblock = hfentry->sblock;
-						fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
-						fread(&tdata,vblock.blocksize,1,disk01);
-						while(TRUE){
-						fread(tdata.data,1,28,fp);
-						fseeko64(disk01,nextblock*vblock.blocksize,SEEK_SET);
-						fwrite(&tdata,vblock.blocksize,1,disk01);
-						if(!tdata.next)break;
-						fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
-						nextblock = tdata.next;
-						fread(&tdata,vblock.blocksize,1,disk01);
-						}		
+
+						DBLOCK cur;
+						nextblock =0;
+						cur.next = hfentry->sblock;
+						
+						do{
+						if((nextblock+1)-cur.next)
+							fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							nextblock = cur.next;
+							fread(&cur,vblock.blocksize,1,disk01);
+							fread(cur.data,1,28,fp);
+							g_array_append_val(dataarr,cur);
+						}while(cur.next);
+						nextblock =0;
+						cur.next = hfentry->sblock;
+						for(i = 0;i<dataarr->len;i++){
+							if((nextblock+1)-cur.next)
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							nextblock = cur.next;
+							cur = g_array_index(dataarr,DBLOCK,i);
+							fwrite(&cur,32,1,disk01);
+						}
 						//Update fe block..... and write back!
 						fe.atime = time(NULL);
 						fe.valid = 1;
@@ -606,15 +617,19 @@ getput_param *p = (getput_param*)pa;
 							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
 						}
 						FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
+						//--------------------------------------------
 						cur.next = hfentry->sblock;
+						nextblock = 0;
 						do{
-							fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							if((nextblock+1)-cur.next)
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							nextblock = cur.next;
 							fread(&cur,vblock.blocksize,1,disk01);
 							fread(cur.data,1,28,fp);
 							if(cur.next)
 								g_array_append_val(dataarr,cur);
 						}while(cur.next);
-					
+						//--------------------------------------------
 						//The last block has invalid block no.(has no.0)
 						j = ((vblock.bitvec_bl+vblock.file_ent_bl+1)/8)*8;
 						for(i = (vblock.bitvec_bl+vblock.file_ent_bl+1)/8;;i++){
@@ -674,33 +689,53 @@ getput_param *p = (getput_param*)pa;
 						//Update fe block and bitvec!
 						//------ also update vblock to increase free
 						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
-						DBLOCK tdata;guint tempnext;
-						nextblock = hfentry->sblock;
-						fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
-						fread(&tdata,vblock.blocksize,1,disk01);
+						DBLOCK cur;guint tempnext;
+						cur.next = hfentry->sblock;
+						nextblock = 0;
+						//fseeko64(disk01,hfentry->sblock*vblock.blocksize,SEEK_SET);
+						//fread(&tdata,vblock.blocksize,1,disk01);
+						//---------------------------------------------------------
 						while(TRUE){
-							fread(tdata.data,1,28,fp);
-							fseeko64(disk01,nextblock*vblock.blocksize,SEEK_SET);
+							if((nextblock+1)-cur.next)
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							nextblock = cur.next;
+							fread(&cur,vblock.blocksize,1,disk01);
+							fread(cur.data,1,28,fp);
+							
 							if(!feof(fp)){
-								fwrite(&tdata,vblock.blocksize,1,disk01);
-								nextblock = tdata.next;
-								fseeko64(disk01,tdata.next*vblock.blocksize,SEEK_SET);
-								fread(&tdata,vblock.blocksize,1,disk01);
+								g_array_append_val(dataarr,cur);
 							}
 							else{
-								tempnext = tdata.next;
-								tdata.next = 0;
-								fwrite(&tdata,vblock.blocksize,1,disk01);
+								tempnext = cur.next;
+								cur.next = 0;
+								g_array_append_val(dataarr,cur);
+								//fwrite(&tdata,vblock.blocksize,1,disk01);
 								break;
 							}
 						}
-					
-						while(tempnext){
-							fseeko64(disk01,tempnext*vblock.blocksize,SEEK_SET);
-							fread(&tdata,vblock.blocksize,1,disk01);
-							bitvec[tempnext/8] = bitvec[tempnext/8] & (~bytechk[tempnext%8]);
-							tempnext = tdata.next;
+						
+						cur.next = tempnext;
+						//----------------------------------------------------------
+						while(cur.next){
+							if((nextblock+1)-cur.next)
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
+							nextblock = cur.next;
+							fread(&cur,vblock.blocksize,1,disk01);
+							bitvec[nextblock/8] = bitvec[nextblock/8] & (~bytechk[nextblock%8]);
 						}
+						
+						nextblock = 0;
+						cur.next = hfentry->sblock;
+						
+						for(i = 0;i<dataarr->len;i++){
+							if((nextblock+1)-cur.next){				
+								fseeko64(disk01,cur.next*32,SEEK_SET);
+							}
+						nextblock = cur.next;
+						cur = g_array_index(dataarr,DBLOCK,i);
+						fwrite(&cur,32,1,disk01);
+						}
+						
 						fe.atime = time(NULL);
 						fe.valid = 1;
 						fe.sblock = hfentry->sblock;
