@@ -9,6 +9,7 @@
 #include<glib.h>
 #include<math.h>
 int ready = 0;
+int desiresize;
 pthread_mutex_t lock;
 GHashTable *filetable;
 gchar *bitvec;
@@ -54,7 +55,7 @@ guint32 fileno;
 
 typedef struct _block{
 guint32 next;
-gchar data[28];
+gchar data[1020];
 }DBLOCK;
 
 typedef struct _node{
@@ -315,26 +316,27 @@ getput_param *p = (getput_param*)pa;
 			DBLOCK cur;
 			cur.next = entry->sblock;
 			nextblock = 0;
+			
 			while(TRUE){
 				if((nextblock+1)-cur.next) 
-					fseeko64(disk01,cur.next*32,SEEK_SET);
+					fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 				nextblock = cur.next;
-				fread(&cur,32,1,disk01);
+				fread(&cur,vblock.blocksize,1,disk01);
 				if(!cur.next){
-					if(entry->size % 28 != 0){
-						fwrite(cur.data,1,entry->size % 28,fp);
+					if(entry->size % desiresize != 0){
+						fwrite(cur.data,1,entry->size % desiresize,fp);
 						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					}
 					else{
-						fwrite(cur.data,1,28,fp);
+						fwrite(cur.data,1,desiresize,fp);
 						if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					    }
 					break;
 				}
 				else{
-					fwrite(cur.data,1,28,fp);
+					fwrite(cur.data,1,desiresize,fp);
 					if(ferror(fp)){err=errno;fclose(fp);fclose(disk01);
 					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
@@ -350,7 +352,7 @@ getput_param *p = (getput_param*)pa;
 			fe.atime = entry->atime;
 			fe.sblock = entry->sblock;
 			fe.valid = entry->valid;
-			fseeko64(disk01,(((vblock.bitvec_bl+1)*32) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
+			fseeko64(disk01,(((vblock.bitvec_bl+1)*vblock.blocksize) + (entry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 			fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 			fclose(fp);fclose(disk01);remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);
     			err = 0;
@@ -429,14 +431,14 @@ getput_param *p = (getput_param*)pa;
  						if((bitvec[i] & bytechk[k]) == 0){
 							if(isFirst){
 								cur.next = 0;
-								fread(cur.data,1,28,fp);
+								fread(cur.data,1,desiresize,fp);
 								blockloc = (i*8)+k;
 								isFirst = FALSE;
 							}
 							else{
 								cur.next = (i*8)+k;
 								g_array_append_val(dataarr,cur);
-								fread(cur.data,1,28,fp);
+								fread(cur.data,1,desiresize,fp);
 								cur.next = 0;			
 							}
 						blockwrct++;
@@ -460,11 +462,11 @@ getput_param *p = (getput_param*)pa;
 				//GOutputStream * stream = g_io_stream_get_output_stream((GIOStream*)fpt);
 				for(i = 0;i<dataarr->len;i++){
 					if((nextblock+1)-cur.next){				
-					fseeko64(disk01,cur.next*32,SEEK_SET);
+					fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 					}
 					nextblock = cur.next;
 					cur = g_array_index(dataarr,DBLOCK,i);
-					fwrite(&cur,32,1,disk01);
+					fwrite(&cur,vblock.blocksize,1,disk01);
 				}
 				/*
 				while(ptr != NULL){				
@@ -478,7 +480,7 @@ getput_param *p = (getput_param*)pa;
 				g_object_unref(fpt);
 				g_object_unref(files);*/
 				//WRITE FREE BIT VEC TO IMG DISK
-				fseeko64(disk01,32,SEEK_SET);
+				fseeko64(disk01,vblock.blocksize,SEEK_SET);
 				fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 				fe.valid = 1;
 				fe.atime = time(NULL);
@@ -486,10 +488,10 @@ getput_param *p = (getput_param*)pa;
 				//FILE LOCATION FOR AVAIL FILE ENT BLOCK AND WRITE VCB BACK
 				if(!vblock.inv_file){
 					vblock.numfile = vblock.numfile+1;
-					fseeko64(disk01,((vblock.bitvec_bl+1)*32)+((vblock.numfile-1)*sizeof(FILE_ENT)),SEEK_SET);
+					fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+((vblock.numfile-1)*sizeof(FILE_ENT)),SEEK_SET);
 					fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 					fseeko64(disk01,0,SEEK_SET);
-					fwrite(&vblock,32,1,disk01);
+					fwrite(&vblock,vblock.blocksize,1,disk01);
 					/*write entry FILE_ENT_INMEM to HTB*/
 					FILE_ENT_INMEM *entry = g_new(FILE_ENT_INMEM,1);
 					entry->key = g_strdup(fe.key);
@@ -522,10 +524,10 @@ getput_param *p = (getput_param*)pa;
 						}
 					}
 					vblock.inv_file = vblock.inv_file - 1;
-					fseeko64(disk01,((vblock.bitvec_bl+1)*32)+(fentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
+					fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(fentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
 					fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 					fseeko64(disk01,0,SEEK_SET);
-					fwrite(&vblock,32,1,disk01);
+					fwrite(&vblock,vblock.blocksize,1,disk01);
 				}
 				g_printf("NORMAL CASE\n");
 				g_printf("KEY => %s\n",fe.key);
@@ -538,7 +540,7 @@ getput_param *p = (getput_param*)pa;
 			}
 		else
 			{ 
-				/*TO EDIT CASE HTB FOUND*/ 
+				/*TO EDIT CASE HTB FOUND*/
 				if(hfentry->valid){
 				//Track what block is already allocated
 				//Check that whether number of block which already allocated is less than required
@@ -576,7 +578,7 @@ getput_param *p = (getput_param*)pa;
 							fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							nextblock = cur.next;
 							fread(&cur,vblock.blocksize,1,disk01);
-							fread(cur.data,1,28,fp);
+							fread(cur.data,1,desiresize,fp);
 							g_array_append_val(dataarr,cur);
 						}while(cur.next);
 						nextblock =0;
@@ -586,7 +588,7 @@ getput_param *p = (getput_param*)pa;
 								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							nextblock = cur.next;
 							cur = g_array_index(dataarr,DBLOCK,i);
-							fwrite(&cur,32,1,disk01);
+							fwrite(&cur,vblock.blocksize,1,disk01);
 						}
 						//Update fe block..... and write back!
 						fe.atime = time(NULL);
@@ -622,7 +624,7 @@ getput_param *p = (getput_param*)pa;
 								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							nextblock = cur.next;
 							fread(&cur,vblock.blocksize,1,disk01);
-							fread(cur.data,1,28,fp);
+							fread(cur.data,1,desiresize,fp);
 							if(cur.next)
 								g_array_append_val(dataarr,cur);
 						}while(cur.next);
@@ -636,7 +638,7 @@ getput_param *p = (getput_param*)pa;
 									cur.next = (i*8)+k;
 									g_array_append_val(dataarr,cur);
 									cur.next = 0;
-									fread(cur.data,1,28,fp);		
+									fread(cur.data,1,desiresize,fp);		
 									blockwrct++;
 									bitvec[i] = bitvec[i] | bytechk[k];
 								}
@@ -650,11 +652,11 @@ getput_param *p = (getput_param*)pa;
 						nextblock = 0;
 						for(i = 0;i<dataarr->len;i++){
 							if((nextblock+1)-cur.next){				
-								fseeko64(disk01,cur.next*32,SEEK_SET);
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							}
 							nextblock = cur.next;
 							cur = g_array_index(dataarr,DBLOCK,i);
-							fwrite(&cur,32,1,disk01);
+							fwrite(&cur,vblock.blocksize,1,disk01);
 						}
 			
 						fe.atime = time(NULL);
@@ -697,7 +699,7 @@ getput_param *p = (getput_param*)pa;
 								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							nextblock = cur.next;
 							fread(&cur,vblock.blocksize,1,disk01);
-							fread(cur.data,1,28,fp);
+							fread(cur.data,1,desiresize,fp);
 							
 							if(!feof(fp)){
 								g_array_append_val(dataarr,cur);
@@ -726,11 +728,11 @@ getput_param *p = (getput_param*)pa;
 						
 						for(i = 0;i<dataarr->len;i++){
 							if((nextblock+1)-cur.next){				
-								fseeko64(disk01,cur.next*32,SEEK_SET);
+								fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 							}
 						nextblock = cur.next;
 						cur = g_array_index(dataarr,DBLOCK,i);
-						fwrite(&cur,32,1,disk01);
+						fwrite(&cur,vblock.blocksize,1,disk01);
 						}
 						
 						fe.atime = time(NULL);
@@ -789,14 +791,14 @@ getput_param *p = (getput_param*)pa;
 	 						if((bitvec[i] & bytechk[k]) == 0){
 								if(isFirst){
 								cur.next = 0;
-								fread(cur.data,1,28,fp);
+								fread(cur.data,1,desiresize,fp);
 								blockloc = (i*8)+k;
 								isFirst = FALSE;
 								}
 								else{
 								cur.next = (i*8)+k;
 								g_array_append_val(dataarr,cur);
-								fread(cur.data,1,28,fp);
+								fread(cur.data,1,desiresize,fp);
 								cur.next = 0;			
 								}
 							blockwrct++;
@@ -814,11 +816,11 @@ getput_param *p = (getput_param*)pa;
 					FILE * disk01 = fopen64(rfosdisk.disk[0],"rb+");
 					for(i = 0;i<dataarr->len;i++){
 						if((nextblock+1)-cur.next){				
-						fseeko64(disk01,cur.next*32,SEEK_SET);
+						fseeko64(disk01,cur.next*vblock.blocksize,SEEK_SET);
 						}
 						nextblock = cur.next;
 						cur = g_array_index(dataarr,DBLOCK,i);
-						fwrite(&cur,32,1,disk01);
+						fwrite(&cur,vblock.blocksize,1,disk01);
 					}
 	
 					fe.valid = 1;
@@ -832,10 +834,10 @@ getput_param *p = (getput_param*)pa;
 					hfentry->sblock = fe.sblock;
 					hfentry->valid = 1;
 		
-					fseeko64(disk01,((vblock.bitvec_bl+1)*32)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
+					fseeko64(disk01,((vblock.bitvec_bl+1)*vblock.blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);
 					fwrite(&fe,sizeof(FILE_ENT),1,disk01);
 					fseeko64(disk01,0,SEEK_SET);
-					fwrite(&vblock,32,1,disk01);
+					fwrite(&vblock,vblock.blocksize,1,disk01);
 					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 					g_printf("Case invalid htb found\n");
 					g_printf("KEY => %s\n",fe.key);
@@ -916,8 +918,8 @@ else{
 			data.next = fentry->sblock;
 			do{
 				bitvec[data.next/8] = bitvec[data.next/8] & (~bytechk[data.next%8]);
-				fseeko64(disk01,(data.next)*32,SEEK_SET);
-				fread(&data,32,1,disk01);
+				fseeko64(disk01,(data.next)*vblock.blocksize,SEEK_SET);
+				fread(&data,vblock.blocksize,1,disk01);
 				delcnt++;
 			}while(data.next);
 
@@ -934,10 +936,10 @@ else{
 			//write data back to disk
 			/*vblock.numfile--;*/vblock.inv_file++;vblock.free+=delcnt;
 			fseeko64(disk01,0,SEEK_SET);
-			fwrite(&vblock,32,1,disk01);
-			fseeko64(disk01,(((vblock.bitvec_bl+1)*32) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
+			fwrite(&vblock,vblock.blocksize,1,disk01);
+			fseeko64(disk01,(((vblock.bitvec_bl+1)*vblock.blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 			fwrite(&fe,sizeof(FILE_ENT),1,disk01);
-			fseeko64(disk01,32,SEEK_SET);
+			fseeko64(disk01,vblock.blocksize,SEEK_SET);
 			fwrite(bitvec,1,(vblock.bitvec_bl*vblock.blocksize),disk01);		
 			fclose(disk01);
 			rfosRemOpenForWrite(p->key);
@@ -1056,12 +1058,12 @@ if(!disk01){
 }
 else
 {
-	fread(&vblock,32,1,disk01);
+	fread(&vblock,sizeof(VCB),1,disk01);
 	if(vblock.numblock == 0){
 		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
 		stat64(rfosdisk.disk[0],&s);
 		vblock.diskno = 0;
-		vblock.blocksize = 32;
+		vblock.blocksize = 1024;
 		vblock.numblock = s.st_size/vblock.blocksize;
 		vblock.bitvec_bl = vblock.numblock/8/vblock.blocksize;
 		vblock.file_ent_bl = vblock.numblock*0.05;
@@ -1080,7 +1082,7 @@ else
 	}
 	filefmtchkpt:
 	fseeko64(disk01,0,SEEK_SET);
-	fwrite(&vblock,32,1,disk01);
+	fwrite(&vblock,vblock.blocksize,1,disk01);
 	fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk01);
 	g_printf("FORMAT COMPLETE!\n");
 	}
@@ -1110,7 +1112,7 @@ else{
 	FILE_ENT_INMEM *entry;
 	g_printf("READ FILES:%d\n",vblock.numfile);
 	guint feoff = vblock.bitvec_bl+1;
-	fseeko64(disk01,feoff*32,SEEK_SET);
+	fseeko64(disk01,feoff*vblock.blocksize,SEEK_SET);
 	for(i=0;i<vblock.numfile;i++){
 		fread(&fe,sizeof(FILE_ENT),1,disk01);
 		entry = g_new(FILE_ENT_INMEM,1);
@@ -1131,7 +1133,7 @@ else{
 }
 fclose(disk01);
 }
-
+desiresize = vblock.blocksize-4;
 ready = 1;
 pthread_exit(0);
 }
