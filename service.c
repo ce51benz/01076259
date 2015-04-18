@@ -76,10 +76,7 @@ gchar *key;
 }key_param;
 
 typedef struct disk_param{
-gchar *disk1;
-gchar *disk2;
-gchar *disk3;
-gchar *disk4;
+gchar **disk;
 gint numdisk;
 }DISK;
 
@@ -188,9 +185,9 @@ else{
 		//Create directory for output file
 		FILE *fp;		
 		g_ptr_array_sort(arr,(GCompareFunc)strcmpcus);
-		struct stat fst;
+		struct stat64 fst;
 		//-------lock--------------
-		if(!stat(p->path,&fst)){
+		if(!stat64(p->path,&fst)){
 			if(isOpenForRead(fst.st_ino) || isOpenForWrite(fst.st_ino)){
 				err = EAGAIN;goto searchchkpt;
 			}
@@ -203,7 +200,7 @@ else{
 				rmdir(p->path);
 				fp = fopen64(p->path,"wb");
 			}
-			stat(p->path,&fst);
+			stat64(p->path,&fst);
 			AOF_ENT ent;
 			ent.fid = fst.st_ino;
 			ent.mode = 'W';
@@ -219,7 +216,7 @@ else{
 				rmdir(p->path);
 				fp = fopen64(p->path,"wb");
 			}
-			stat(p->path,&fst);
+			stat64(p->path,&fst);
 			AOF_ENT ent;
 			ent.fid = fst.st_ino;
 			ent.mode = 'W';
@@ -276,9 +273,9 @@ getput_param *p = (getput_param*)pa;
 			}
 			//--------------------------
 			FILE *fp;
-			struct stat fst;
+			struct stat64 fst;
 			//-------lock2--------------
-			if(!stat(p->path,&fst)){
+			if(!stat64(p->path,&fst)){
 				if(isOpenForRead(fst.st_ino) || isOpenForWrite(fst.st_ino)){
 					err = EAGAIN;goto getchkpt;
 				}
@@ -291,7 +288,7 @@ getput_param *p = (getput_param*)pa;
 					rmdir(p->path);
 					fp = fopen64(p->path,"wb");
 					}				
-					stat(p->path,&fst);
+					stat64(p->path,&fst);
 					AOF_ENT ent;
 					ent.fid = fst.st_ino;
 					ent.mode = 'W';
@@ -307,14 +304,14 @@ getput_param *p = (getput_param*)pa;
 					rmdir(p->path);
 					fp = fopen64(p->path,"wb");
 				}				
-				stat(p->path,&fst);
+				stat64(p->path,&fst);
 				AOF_ENT ent;
 				ent.fid = fst.st_ino;
 				ent.mode = 'W';
 				g_array_append_val(actoft,ent);
 			}
 			//-------------------------
-			FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+			FILE *disk01 = fopen64(rfosdisk.disk[0],"rb+");
 			DBLOCK cur;
 			cur.next = entry->sblock;
 			nextblock = 0;
@@ -386,9 +383,9 @@ getput_param *p = (getput_param*)pa;
     else if(strlen(p->key)!=8)
 	err = ENAMETOOLONG;
     else{
-	struct stat fst;
+	struct stat64 fst;
 	//-----------------lock-----------------
-	if(stat(p->path,&fst))err = ENOENT;
+	if(stat64(p->path,&fst))err = ENOENT;
 	else{
 		if(isOpenForWrite(fst.st_ino)){err = EAGAIN;goto putchkpt;}
 		AOF_ENT ent;
@@ -455,7 +452,7 @@ getput_param *p = (getput_param*)pa;
 				g_array_append_val(dataarr,cur);
 				cur.next = fe.sblock = blockloc;
 				nextblock = 0;
-				FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
+				FILE * disk01 = fopen64(rfosdisk.disk[0],"rb+");
 				//fseeko64(disk01,nextblock*32,SEEK_CUR);
 				//WRITE DATA TO IMG DISK
 				//GFile *files = g_file_new_for_path(rfosdisk.disk1);
@@ -568,7 +565,7 @@ getput_param *p = (getput_param*)pa;
 					if(ceil(hfentry->size*1.0/(vblock.blocksize-4)) == ceil(fe.size*1.0/(vblock.blocksize-4))){
 						//this case can replace data instantly!
 						//no need to update vblock
-						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+						FILE *disk01 = fopen64(rfosdisk.disk[0],"rb+");
 
 						DBLOCK cur;
 						nextblock =0;
@@ -616,7 +613,7 @@ getput_param *p = (getput_param*)pa;
 							fclose(fp);err = ENOSPC;
 							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
 						}
-						FILE *disk01 = fopen(rfosdisk.disk1,"rb+");
+						FILE *disk01 = fopen(rfosdisk.disk[0],"rb+");
 						//--------------------------------------------
 						cur.next = hfentry->sblock;
 						nextblock = 0;
@@ -688,7 +685,7 @@ getput_param *p = (getput_param*)pa;
 						//The rest of old file will freed
 						//Update fe block and bitvec!
 						//------ also update vblock to increase free
-						FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+						FILE *disk01 = fopen64(rfosdisk.disk[0],"rb+");
 						DBLOCK cur;guint tempnext;
 						cur.next = hfentry->sblock;
 						nextblock = 0;
@@ -814,7 +811,7 @@ getput_param *p = (getput_param*)pa;
 					g_array_append_val(dataarr,cur);
 					cur.next = fe.sblock = blockloc;
 					nextblock = 0;
-					FILE * disk01 = fopen64(rfosdisk.disk1,"rb+");
+					FILE * disk01 = fopen64(rfosdisk.disk[0],"rb+");
 					for(i = 0;i<dataarr->len;i++){
 						if((nextblock+1)-cur.next){				
 						fseeko64(disk01,cur.next*32,SEEK_SET);
@@ -914,7 +911,7 @@ else{
  				g_array_append_val(rfosoft,rent);
 			}
 			//----------------------------------------
-			disk01 = fopen64(rfosdisk.disk1,"rb+");
+			disk01 = fopen64(rfosdisk.disk[0],"rb+");
 			DBLOCK data;
 			data.next = fentry->sblock;
 			do{
@@ -1052,8 +1049,8 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-struct stat s;
-FILE *disk01 = fopen64(rfosdisk.disk1,"rb+");
+struct stat64 s;
+FILE *disk01 = fopen64(rfosdisk.disk[0],"rb+");
 if(!disk01){
 	g_printf("Open disk failed.\n");
 }
@@ -1062,7 +1059,7 @@ else
 	fread(&vblock,32,1,disk01);
 	if(vblock.numblock == 0){
 		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
-		stat(rfosdisk.disk1,&s);
+		stat64(rfosdisk.disk[0],&s);
 		vblock.diskno = 0;
 		vblock.blocksize = 32;
 		vblock.numblock = s.st_size/vblock.blocksize;
@@ -1145,26 +1142,26 @@ pthread_t test;
 actoft = g_array_new(TRUE,FALSE,sizeof(AOF_ENT));
 rfosoft = g_array_new(TRUE,FALSE,sizeof(RFOSOFT_ENT));
 
-
 if(argc > 1){
 rfosdisk.numdisk = argc - 1;
+rfosdisk.disk = g_new(gchar *,argc -1);
 	if(argc == 2){
-	rfosdisk.disk1 = argv[1];
+		rfosdisk.disk[0] = g_strdup(argv[1]);
 	}
 	else if(argc == 3){
-	rfosdisk.disk1 = argv[1];
-	rfosdisk.disk2 = argv[2];
+		rfosdisk.disk[0] = g_strdup(argv[1]);
+		rfosdisk.disk[1] = g_strdup(argv[2]);
 	}
 	else if(argc == 4){
-	rfosdisk.disk1 = argv[1];
-	rfosdisk.disk2 = argv[2];
-	rfosdisk.disk3 = argv[3];
+		rfosdisk.disk[0] = g_strdup(argv[1]);
+		rfosdisk.disk[1] = g_strdup(argv[2]);
+		rfosdisk.disk[2] = g_strdup(argv[3]);
 	}
 	else{
-	rfosdisk.disk1 = argv[1];
-	rfosdisk.disk2 = argv[2];
-	rfosdisk.disk3 = argv[3];
-	rfosdisk.disk4 = argv[4];
+		rfosdisk.disk[0] = g_strdup(argv[1]);
+		rfosdisk.disk[1] = g_strdup(argv[2]);
+		rfosdisk.disk[2] = g_strdup(argv[3]);
+		rfosdisk.disk[3] = g_strdup(argv[4]);
 	}
 	pthread_mutex_init(&lock,NULL);
     /* Initialize daemon main loop */
@@ -1182,7 +1179,8 @@ rfosdisk.numdisk = argc - 1;
     /* Start the main loop */
 //Initialized RFOS (FORMATTING) via another thread
 pthread_create(&test,NULL,dummywork,NULL);
-    g_main_loop_run (loop);
+//pthread_create(&test1,NULL,checkexist,NULL); 
+   g_main_loop_run (loop);
 }
 else{
 g_printf("Usage:./rfos-svc [disk1-name] [disk2-name] [disk3-name] [disk4-name]\n"); 
