@@ -1,5 +1,6 @@
 #include "rfos.h"
 #include <glib/gprintf.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -164,6 +165,14 @@ for(i=0;i<rfosoft->len;i++){
 int strcmpcus(long *str1,long *str2){
 return g_strcmp0(GUINT_TO_POINTER(*str1),GINT_TO_POINTER(*str2));
 }
+
+gboolean isAlnumStr(char *str){
+int l = strlen(str),n;
+for(n=0;n<l;n++){
+	if(!isalnum(str[n]))return FALSE;
+}
+return TRUE;
+}
 void *do_handle_search(void *pa){
 guint err;
 FILE_ENT_INMEM *fentry;
@@ -172,7 +181,7 @@ gpointer key,value;
 GHashTableIter iter;
 GPtrArray *arr = NULL;
 if(!ready)err = EBUSY;
-else if(strlen(p->key)>8)err =ENAMETOOLONG;
+else if(strlen(p->key)>8 || (!isAlnumStr(p->key)))err =ENAMETOOLONG;
 else{
 	arr = g_ptr_array_new();
 	g_hash_table_iter_init(&iter,filetable); //hash table must not be modified!?????
@@ -256,7 +265,7 @@ for(i =0;i<rfosdisk.numdisk;i++)
 getput_param *p = (getput_param*)pa;
 
     if(!ready)err = EBUSY;
-    else if(strlen(p->key)!=8)
+    else if(strlen(p->key)!=8 || (!isAlnumStr(p->key)))
 	err = ENAMETOOLONG;
     else{
 	if((entry = (FILE_ENT_INMEM*)g_hash_table_lookup (filetable,p->key))!=NULL){ //also check for valid
@@ -433,7 +442,7 @@ for(i=0;i<rfosdisk.numdisk;i++)
 getput_param *p = (getput_param*)pa;
 
     if(!ready)err = EBUSY;
-    else if(strlen(p->key)!=8)
+    else if(strlen(p->key)!=8 || (!isAlnumStr(p->key)))
 	err = ENAMETOOLONG;
     else{
 	struct stat64 fst;
@@ -1149,7 +1158,7 @@ guint err;
 guint64 atime = 0;
 FILE_ENT_INMEM *fentry;
 if(!ready)err = EBUSY;
-else if(strlen(p->key) != 8)err = ENAMETOOLONG;
+else if(strlen(p->key) != 8 || (!isAlnumStr(p->key)))err = ENAMETOOLONG;
 else if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
 	if(!fentry->valid)err = ENOENT;
 	else{
@@ -1177,7 +1186,7 @@ for(i = 0;i<rfosdisk.numdisk;i++)
 	disk[i] = NULL;
 guint32 delcnt = 0;
 if(!ready)err = EBUSY;
-else if(strlen(p->key)!=8)err = ENAMETOOLONG;
+else if(strlen(p->key)!=8 || (!isAlnumStr(p->key)))err = ENAMETOOLONG;
 else{
 	if((fentry = g_hash_table_lookup(filetable,p->key)) != NULL){
 		if(!fentry->valid)err = ENOENT; // if file entry is already invalid return ENOENT
@@ -1516,18 +1525,6 @@ int main (int argc,char **argv)
 pthread_t test;
 actoft = g_array_new(TRUE,FALSE,sizeof(AOF_ENT));
 rfosoft = g_array_new(TRUE,FALSE,sizeof(RFOSOFT_ENT));
-/*FILE *ff = fopen64("disk5.iso","rb");
-FILE *ff1 = fopen64("diskb.iso","wb");
-char s;
-while(!feof(ff)){
-	fread(&s,1,1,ff);
-	//if(feof(ff))break;
-	fwrite(&s,1,1,ff1);
-}
-fclose(ff);
-//g_printf("ERROR !!! eiei => %d\n",errno);
-g_printf("SUCCESS!\n");
-fclose(ff1);*/
 
 
 if(argc > 1){
