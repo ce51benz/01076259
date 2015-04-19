@@ -555,26 +555,22 @@ getput_param *p = (getput_param*)pa;
 					
 				/////-------------------1------------------------------
 				
-				//WRITE FREE BIT VEC TO IMG DISK
-
-				/////-------------------2------------------------------
-				if(isBoth){
-					for(n = 0;n<rfosdisk.numdisk;n++){
-						fseeko64(disk[n],vblock.blocksize,SEEK_SET);
-						fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk[n]);
-					}
-				}
-				else{
-					fseeko64(disk[primary],vblock.blocksize,SEEK_SET);
-					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk[primary]);
-				}
-				/////-------------------2------------------------------
 				fe.valid = 1;
 				fe.atime = time(NULL);
 				vblock.free = vblock.free - blockwrct;
 				//FILE LOCATION FOR AVAIL FILE ENT BLOCK AND WRITE VCB BACK
 				if(!vblock.inv_file){
+					if(ceil(((vblock.numfile-vblock.inv_file)*1.0*sizeof(FILE_ENT))/vblock.blocksize) < vblock.file_ent_bl)
 					vblock.numfile = vblock.numfile+1;
+					else{
+						if(isBoth){
+							for(n = 0;n<rfosdisk.numdisk;n++)
+								fclose(disk[n]);
+						}
+						else fclose(disk[primary]);
+						err = EPERM;
+						rfosRemOpenForWrite(p->key);goto putchkpt;	
+					}
 					/////-------------------3------------------------------
 					if(isBoth){
 						for(n = 0;n<rfosdisk.numdisk;n++){
@@ -612,6 +608,7 @@ getput_param *p = (getput_param*)pa;
 					while(g_hash_table_iter_next(&iter,&key,&value)){
 						fentry = (FILE_ENT_INMEM*)value;
 						if(!fentry->valid){
+							g_hash_table_remove(filetable,fentry->key);
 							g_free(fentry->key);
 							fentry->key = g_strdup(fe.key);
 							fentry->size = fe.size;
@@ -641,6 +638,20 @@ getput_param *p = (getput_param*)pa;
 					}
 					/////-------------------4------------------------------
 				}
+				
+				//WRITE FREE BIT VEC TO IMG DISK
+				/////-------------------2------------------------------
+				if(isBoth){
+					for(n = 0;n<rfosdisk.numdisk;n++){
+						fseeko64(disk[n],vblock.blocksize,SEEK_SET);
+						fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk[n]);
+					}
+				}
+				else{
+					fseeko64(disk[primary],vblock.blocksize,SEEK_SET);
+					fwrite(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk[primary]);
+				}
+				/////-------------------2------------------------------
 				g_printf("NORMAL CASE\n");
 				g_printf("KEY => %s\n",fe.key);
 				g_printf("SIZE => %d\n",fe.size);
@@ -1369,7 +1380,7 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-struct stat64 s,s2;
+struct stat64 s;
 guint32 buffersize = 65536;
 char buf[buffersize];
 FILE *disk[rfosdisk.numdisk];
@@ -1380,6 +1391,7 @@ for(n = 0;n<rfosdisk.numdisk;n++){
 		g_printf("OPEN DISK FAILED. -- Image disk is not found.\n");
 		exit(1);
 	}
+	
 }
 
 ///    1   1 
@@ -1396,7 +1408,7 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 		vblock.diskno = 0;
 		vblock.blocksize = 1024;
 		vblock.numblock = s.st_size/vblock.blocksize;
-		vblock.bitvec_bl = vblock.numblock/8/vblock.blocksize;
+		vblock.bitvec_bl = ceil((vblock.numblock*1.0)/8/vblock.blocksize);
 		vblock.file_ent_bl = vblock.numblock*0.05;
 		vblock.free = vblock.numblock-vblock.bitvec_bl-vblock.file_ent_bl-1;
 		vblock.numfile = 0;
@@ -1478,6 +1490,7 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 	g_printf("FILE COUNT:%d\n",vblock.numfile);
 	g_printf("INVALID FILE:%d\n",vblock.inv_file);
 	bitvec = g_new(gchar,vblock.bitvec_bl*vblock.blocksize);
+	fseeko64(disk[0],vblock.blocksize,SEEK_SET);
 	fread(bitvec,1,vblock.bitvec_bl*vblock.blocksize,disk[0]);
 	guint32 i,j=0,bituse=0,k;
 	for(i = 0;;i++){
