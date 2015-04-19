@@ -1,5 +1,6 @@
 #include "rfos.h"
 #include <glib/gprintf.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
@@ -1359,23 +1360,28 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-struct stat64 s;
+struct stat64 s,s2;
+guint32 buffersize = 65536;
+char buf[buffersize];
 FILE *disk[rfosdisk.numdisk];
-int n;gboolean isPass = FALSE;
+int n,pass=0;
 for(n = 0;n<rfosdisk.numdisk;n++){
 	disk[n] = fopen64(rfosdisk.disk[n],"rb+");
 	if(!disk[n]){
-		g_printf("OPEN DISK FAILED.\n");
+		g_printf("OPEN DISK FAILED. -- Image disk is not found.\n");
+		exit(1);
 	}
 }
 
+///    1   1 
+//     d1  d0	
 for(n = 0;n < rfosdisk.numdisk;n++)
 {
 	fread(&vblock,sizeof(VCB),1,disk[n]);
-	if(vblock.numblock != 0) isPass = TRUE;
+	if(vblock.numblock != 0) pass = pass | (n+1);
 }
 
-	if(!isPass){ // case both disk has no data
+	if(pass == 0){ // case both disk has no data
 		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
 		stat64(rfosdisk.disk[0],&s);
 		vblock.diskno = 0;
@@ -1405,8 +1411,54 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 	}
 	g_printf("FORMAT COMPLETE!\n");
 }
-else{ //if success,default is read data from disk0
-	
+	else if(pass == 1 && rfosdisk.numdisk == 2){ // case disk0 OK but disk1 is not.
+		//Relay data from disk0 to disk1 and continue initialized RFOS
+		g_printf("Relay data from disk0 to disk1...\n");
+		stat64(rfosdisk.disk[0],&s);
+		fseeko64(disk[0],0,SEEK_SET);
+		fseeko64(disk[1],0,SEEK_SET);
+		while(TRUE){
+			fread(buf,1,buffersize,disk[0]);
+			if(!feof(disk[0])){
+				fwrite(buf,1,buffersize,disk[1]);
+			}
+			else{
+				if(s.st_size % buffersize != 0)
+					fwrite(buf,1,s.st_size % buffersize,disk[1]);
+				break;
+			}
+			
+		}
+
+		fseeko64(disk[0],0,SEEK_SET);
+		fread(&vblock,sizeof(VCB),1,disk[0]);
+		goto readdatapt;
+	}
+	else if(pass == 2 && rfosdisk.numdisk == 2){// case disk1 OK but disk0 is not.
+		//Relay data from disk1 to disk0 and continue initialized RFOS
+		g_printf("Relay data from disk1 to disk0...\n");
+		stat64(rfosdisk.disk[1],&s);
+		fseeko64(disk[0],0,SEEK_SET);
+		fseeko64(disk[1],0,SEEK_SET);
+		while(TRUE){
+			fread(buf,1,buffersize,disk[1]);
+			if(!feof(disk[1])){
+				fwrite(buf,1,buffersize,disk[0]);
+			}
+			else{
+				if(s.st_size % buffersize != 0)
+					fwrite(buf,1,s.st_size % buffersize,disk[0]);
+				break;
+			}
+			
+		}
+
+		fseeko64(disk[1],0,SEEK_SET);
+		fread(&vblock,sizeof(VCB),1,disk[1]);
+		goto readdatapt;
+	}
+	else{ //if both disk is success to read,default is read data from disk0
+	readdatapt:
 	g_printf("FILE SYSTEM DETAIL....\n");
 	g_printf("DISK NO:%d\n",vblock.diskno);
 	g_printf("BLOCK SIZE:%d\n",vblock.blocksize);
@@ -1464,18 +1516,19 @@ int main (int argc,char **argv)
 pthread_t test;
 actoft = g_array_new(TRUE,FALSE,sizeof(AOF_ENT));
 rfosoft = g_array_new(TRUE,FALSE,sizeof(RFOSOFT_ENT));
-//FILE *ff = fopen64("disk1.img","rb+");
-//FILE *ff1 = fopen64("disk0.img","wb");
-//char s;
-/*{
+/*FILE *ff = fopen64("disk5.iso","rb");
+FILE *ff1 = fopen64("diskb.iso","wb");
+char s;
+while(!feof(ff)){
 	fread(&s,1,1,ff);
-	if(feof(ff))break;
-	//fwrite(&s,1,1,ff1);
+	//if(feof(ff))break;
+	fwrite(&s,1,1,ff1);
 }
 fclose(ff);
-g_printf("ERROR !!! eiei => %d\n",errno);
-fclose(ff1);
-*/
+//g_printf("ERROR !!! eiei => %d\n",errno);
+g_printf("SUCCESS!\n");
+fclose(ff1);*/
+
 
 if(argc > 1){
 rfosdisk.numdisk = argc - 1;
