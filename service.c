@@ -14,7 +14,7 @@ int ready = 0;
 int desiresize;
 pthread_mutex_t lock;
 GHashTable *filetable;
-gchar *bitvec;
+gchar *bitvec[2];
 GArray *actoft,*rfosoft;
 int bytechk[8] = {0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01};
 typedef struct _aofe{
@@ -488,7 +488,7 @@ getput_param *p = (getput_param*)pa;
 				for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
 						if(j>=vblock[0].numblock || feof(fp))goto freeblkrwchkpt; //0
- 						if((bitvec[i] & bytechk[k]) == 0){
+ 						if((bitvec[0][i] & bytechk[k]) == 0){
 							if(isFirst){
 								cur.next = 0;
 								fread(cur.data,1,desiresize,fp);
@@ -502,7 +502,7 @@ getput_param *p = (getput_param*)pa;
 								cur.next = 0;			
 							}
 						blockwrct++;
-						bitvec[i] = bitvec[i] | bytechk[k];
+						bitvec[0][i] = bitvec[0][i] | bytechk[k];
 						}
 						j++;
 					}
@@ -644,12 +644,12 @@ getput_param *p = (getput_param*)pa;
 				if(isBoth){
 					for(n = 0;n<rfosdisk.numdisk;n++){
 						fseeko64(disk[n],vblock[0].blocksize,SEEK_SET);
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
 					}
 				}
 				else{
 					fseeko64(disk[primary],vblock[0].blocksize,SEEK_SET);
-					fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
+					fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
 				}
 				/////-------------------2------------------------------
 				g_printf("NORMAL CASE\n");
@@ -817,13 +817,13 @@ getput_param *p = (getput_param*)pa;
 						for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 							for(k=0;k<8;k++){
 								if(j>=vblock[0].numblock || feof(fp))goto freeblkrwchkpt3; //0
- 								if((bitvec[i] & bytechk[k]) == 0){	
+ 								if((bitvec[0][i] & bytechk[k]) == 0){	
 									cur.next = (i*8)+k;
 									g_array_append_val(dataarr,cur);
 									cur.next = 0;
 									fread(cur.data,1,desiresize,fp);		
 									blockwrct++;
-									bitvec[i] = bitvec[i] | bytechk[k];
+									bitvec[0][i] = bitvec[0][i] | bytechk[k];
 								}
 							j++;
 							}
@@ -873,7 +873,7 @@ getput_param *p = (getput_param*)pa;
 						fwrite(&fe,sizeof(FILE_ENT),1,disk[n]);
 						fseeko64(disk[n],0,SEEK_SET);
 					fwrite(&vblock[0],vblock[0].blocksize,1,disk[n]);								
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
 						fclose(disk[n]);
 						}
 						}
@@ -882,7 +882,7 @@ getput_param *p = (getput_param*)pa;
 						fwrite(&fe,sizeof(FILE_ENT),1,disk[primary]);
 						fseeko64(disk[primary],0,SEEK_SET);
 					fwrite(&vblock[0],vblock[0].blocksize,1,disk[primary]);								
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
 						fclose(disk[primary]);
 						}
 						//--------------------16--------------------
@@ -944,7 +944,7 @@ getput_param *p = (getput_param*)pa;
 								fseeko64(disk[primary],cur.next*vblock[0].blocksize,SEEK_SET);
 							nextblock = cur.next;
 							fread(&cur,vblock[0].blocksize,1,disk[primary]);
-							bitvec[nextblock/8] = bitvec[nextblock/8] & (~bytechk[nextblock%8]);
+							bitvec[0][nextblock/8] = bitvec[0][nextblock/8] & (~bytechk[nextblock%8]);
 						}
 						//------------------18 readonly--------------------------
 						
@@ -992,7 +992,7 @@ getput_param *p = (getput_param*)pa;
 						fwrite(&fe,sizeof(FILE_ENT),1,disk[n]);
 						fseeko64(disk[n],0,SEEK_SET);
 						fwrite(&vblock[0],vblock[0].blocksize,1,disk[n]);	
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);				
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);				
 						fclose(disk[n]);
 						}
 					}
@@ -1001,7 +1001,7 @@ getput_param *p = (getput_param*)pa;
 						fwrite(&fe,sizeof(FILE_ENT),1,disk[primary]);
 						fseeko64(disk[primary],0,SEEK_SET);
 						fwrite(&vblock[0],vblock[0].blocksize,1,disk[primary]);	
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);				
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);				
 						fclose(disk[primary]);
 					}
 					//----------------------------20----------------	
@@ -1045,7 +1045,7 @@ getput_param *p = (getput_param*)pa;
 					for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 						for(k=0;k<8;k++){
 							if(j>=vblock[0].numblock || feof(fp))goto freeblkrwchkpt2; //0
-	 						if((bitvec[i] & bytechk[k]) == 0){
+	 						if((bitvec[0][i] & bytechk[k]) == 0){
 								if(isFirst){
 								cur.next = 0;
 								fread(cur.data,1,desiresize,fp);
@@ -1059,7 +1059,7 @@ getput_param *p = (getput_param*)pa;
 								cur.next = 0;			
 								}
 							blockwrct++;
-							bitvec[i] = bitvec[i] | bytechk[k];
+							bitvec[0][i] = bitvec[0][i] | bytechk[k];
 							}
 							j++;
 						}
@@ -1126,7 +1126,7 @@ getput_param *p = (getput_param*)pa;
 							fwrite(&fe,sizeof(FILE_ENT),1,disk[n]);
 							fseeko64(disk[n],0,SEEK_SET);
 							fwrite(&vblock[0],vblock[0].blocksize,1,disk[n]);
-							fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
+							fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
 							fclose(disk[n]);
 						}
 					}
@@ -1135,7 +1135,7 @@ getput_param *p = (getput_param*)pa;
 						fwrite(&fe,sizeof(FILE_ENT),1,disk[primary]);
 						fseeko64(disk[primary],0,SEEK_SET);
 						fwrite(&vblock[0],vblock[0].blocksize,1,disk[primary]);
-						fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
+						fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[primary]);
 						fclose(disk[primary]);
 					}
 					//-------------------8----------------------------
@@ -1232,7 +1232,7 @@ else{
 
 			//--------------------------------------------
 			do{
-				bitvec[data.next/8] = bitvec[data.next/8] & (~bytechk[data.next%8]);
+				bitvec[0][data.next/8] = bitvec[0][data.next/8] & (~bytechk[data.next%8]);
 				fseeko64(disk[primary],(data.next)*vblock[0].blocksize,SEEK_SET);
 				fread(&data,vblock[0].blocksize,1,disk[primary]);
 				delcnt++;
@@ -1259,7 +1259,7 @@ else{
 				fseeko64(disk[i],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 				fwrite(&fe,sizeof(FILE_ENT),1,disk[i]);
 				fseeko64(disk[i],vblock[0].blocksize,SEEK_SET);
-				fwrite(bitvec,1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[i]);		
+				fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[i]);		
 				fclose(disk[i]);
 			}
 			else{
@@ -1268,7 +1268,7 @@ else{
 				fseeko64(disk[primary],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 				fwrite(&fe,sizeof(FILE_ENT),1,disk[primary]);
 				fseeko64(disk[primary],vblock[0].blocksize,SEEK_SET);
-				fwrite(bitvec,1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[primary]);		
+				fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[primary]);		
 				fclose(disk[primary]);
 			}
 			rfosRemOpenForWrite(p->key);
@@ -1380,11 +1380,12 @@ static void on_name_acquired (GDBusConnection *connection,
 }
 
 void *dummywork(void *t){
-struct stat64 s;
+struct stat64 s,s2;
 guint32 buffersize = 65536;
 char buf[buffersize];
 FILE *disk[rfosdisk.numdisk];
 int n,pass=0;
+guint32 i,j,k;
 for(n = 0;n<rfosdisk.numdisk;n++){
 	disk[n] = fopen64(rfosdisk.disk[n],"rb+");
 	if(!disk[n]){
@@ -1401,10 +1402,10 @@ for(n = 0;n<rfosdisk.numdisk;n++){
 for(n = 0;n < rfosdisk.numdisk;n++)
 {
 	fread(&vblock[0],sizeof(VCB),1,disk[n]);
-	if(vblock[0].numblock != 0) pass = pass | (n+1);
+	if(vblock[0].numblock != 0) pass = pass | bytechk[7-n];
 }
 
-	if(pass == 0){ // case both disk has no data
+	if(pass == 0 && rfosdisk.numdisk <=2){ // case both disks has no data
 		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
 		stat64(rfosdisk.disk[0],&s);
 		vblock[0].diskno = 0;
@@ -1415,13 +1416,13 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 		vblock[0].free = vblock[0].numblock-vblock[0].bitvec_bl-vblock[0].file_ent_bl-1;
 		vblock[0].numfile = 0;
 		vblock[0].inv_file = 0;
-		bitvec = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
-		guint i,j=0,k;
+		bitvec[0] = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
+		j=0;
 		guint32 startblock = vblock[0].bitvec_bl+vblock[0].file_ent_bl+1;
 		for(i = 0;;i++){
 			for(k=0;k<8;k++){
 				if(j>=startblock)goto filefmtchkpt;
-				bitvec[i] = bitvec[i] | bytechk[k];
+				bitvec[0][i] = bitvec[0][i] | bytechk[k];
 			j++;
 		}
 	}
@@ -1430,10 +1431,67 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 	for(n = 0;n<rfosdisk.numdisk;n++){
 		fseeko64(disk[n],0,SEEK_SET);
 		fwrite(&vblock[0],vblock[0].blocksize,1,disk[n]);
-		fwrite(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
+		fwrite(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[n]);
 	}
 	g_printf("FORMAT COMPLETE!\n");
 }
+	else if(pass == 0){
+	//Case 3-4 disk has no data
+	//Format first 2 disk like above case
+	//Format last 2 disk by do below step
+	//Set VCB to desire value for diskno,numblock,free,bitvec_bl,blocksize,file_ent_bl = 0,numfile=0,inv_file =0;
+	//Set bitvec .... only 1st block and bitvec_bl block are allocated and write back to both disk
+		g_printf("FILE SYSTEM NOT FOUND SERVICE WILL FORMAT...\n");
+		stat64(rfosdisk.disk[0],&s);
+		stat64(rfosdisk.disk[2],&s2);
+		vblock[0].diskno = 0;
+		vblock[0].blocksize = 1024;
+		vblock[0].numblock = s.st_size/vblock[0].blocksize;
+		vblock[0].bitvec_bl = ceil((vblock[0].numblock*1.0)/8/vblock[0].blocksize);
+		vblock[0].file_ent_bl = vblock[0].numblock*0.05;
+		vblock[0].free = vblock[0].numblock-vblock[0].bitvec_bl-vblock[0].file_ent_bl-1;
+		vblock[0].numfile = 0;
+		vblock[0].inv_file = 0;
+		bitvec[0] = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
+		j=0;
+		guint32 startblock = vblock[0].bitvec_bl+vblock[0].file_ent_bl+1;
+		for(i = 0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=startblock)goto filefmtchkpt0;
+				bitvec[0][i] = bitvec[0][i] | bytechk[k];
+			j++;
+			}
+		}
+	filefmtchkpt0:
+		vblock[1].diskno = 1;
+		vblock[1].blocksize = 1024;
+		vblock[1].numblock = s2.st_size/vblock[1].blocksize;
+		vblock[1].bitvec_bl = ceil((vblock[1].numblock*1.0)/8/vblock[1].blocksize);
+		vblock[1].free = vblock[1].numblock-vblock[1].bitvec_bl-1;
+		vblock[1].numfile = 0;
+		vblock[1].inv_file = 0;
+		vblock[1].file_ent_bl = 0;
+		bitvec[1] = g_new(gchar,vblock[1].bitvec_bl*vblock[1].blocksize);
+		j=0;
+		startblock = vblock[1].bitvec_bl+1;
+		for(i = 0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=startblock)goto filefmtchkpt1;
+				bitvec[1][i] = bitvec[1][i] | bytechk[k];
+			j++;
+			}
+		}
+	filefmtchkpt1:
+
+	//write disk 1-4
+	for(n = 0;n<rfosdisk.numdisk;n++){
+		fseeko64(disk[n],0,SEEK_SET);
+		fwrite(&vblock[n/2],vblock[n/2].blocksize,1,disk[n]);
+		fwrite(bitvec[n/2],1,vblock[n/2].bitvec_bl*vblock[n/2].blocksize,disk[n]);
+	}
+
+	g_printf("FORMAT COMPLETE!\n");
+	}		
 	else if(pass == 1 && rfosdisk.numdisk == 2){ // case disk0 OK but disk1 is not.
 		//Relay data from disk0 to disk1 and continue initialized RFOS
 		g_printf("Relay data from disk0 to disk1...\n");
@@ -1455,6 +1513,59 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 
 		fseeko64(disk[0],0,SEEK_SET);
 		fread(&vblock[0],sizeof(VCB),1,disk[0]);
+		goto readdatapt;
+	}
+	else if(pass == 1 && rfosdisk.numdisk > 2){
+ 		// case disk0 OK but disk1 is not. with newly 2 disk are added.
+		//Relay data from disk0 to disk1 with formatted of last 2 disk
+		//and continue initialized RFOS
+		passonechkpt:
+		g_printf("Relay data from disk0 to disk1 with format last 1-2 disks...\n");
+		stat64(rfosdisk.disk[0],&s);
+		stat64(rfosdisk.disk[2],&s2);
+		fseeko64(disk[0],0,SEEK_SET);
+		fseeko64(disk[1],0,SEEK_SET);
+		while(TRUE){
+			fread(buf,1,buffersize,disk[0]);
+			if(!feof(disk[0])){
+				fwrite(buf,1,buffersize,disk[1]);
+			}
+			else{
+				if(s.st_size % buffersize != 0)
+					fwrite(buf,1,s.st_size % buffersize,disk[1]);
+				break;
+			}
+		}
+		vblock[1].diskno = 1;
+		vblock[1].blocksize = 1024;
+		vblock[1].numblock = s2.st_size/vblock[1].blocksize;
+		vblock[1].bitvec_bl = ceil((vblock[1].numblock*1.0)/8/vblock[1].blocksize);
+		vblock[1].free = vblock[1].numblock-vblock[1].bitvec_bl-1;
+		vblock[1].numfile = 0;
+		vblock[1].inv_file = 0;
+		vblock[1].file_ent_bl = 0;
+		bitvec[1] = g_new(gchar,vblock[1].bitvec_bl*vblock[1].blocksize);
+		j=0;
+		guint32 startblock = vblock[1].bitvec_bl+1;
+		for(i=0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=startblock)goto filefmtchkpt2;
+				bitvec[1][i] = bitvec[1][i] | bytechk[k];
+			j++;
+			}
+		}
+	filefmtchkpt2:
+
+	//write disk 3-4
+	for(n = 2;n<rfosdisk.numdisk;n++){
+		fseeko64(disk[n],0,SEEK_SET);
+		fwrite(&vblock[1],vblock[1].blocksize,1,disk[n]);
+		fwrite(bitvec[1],1,vblock[1].bitvec_bl*vblock[1].blocksize,disk[n]);
+	}
+		fseeko64(disk[0],0,SEEK_SET);
+		fseeko64(disk[2],0,SEEK_SET);
+		fread(&vblock[0],sizeof(VCB),1,disk[0]);
+		fread(&vblock[1],sizeof(VCB),1,disk[2]);		
 		goto readdatapt;
 	}
 	else if(pass == 2 && rfosdisk.numdisk == 2){// case disk1 OK but disk0 is not.
@@ -1480,7 +1591,147 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 		fread(&vblock[0],sizeof(VCB),1,disk[1]);
 		goto readdatapt;
 	}
-	else{ //if both disk is success to read,default is read data from disk0
+	else if(pass == 2 && rfosdisk.numdisk > 2){
+ 		// case disk1 OK but disk0 is not. with newly 2 disk are added.
+		//Relay data from disk1 to disk0 with formatted of last 2 disk
+		//and continue initialized RFOS
+		g_printf("Relay data from disk1 to disk0 with format last 1-2 disks...\n");
+		stat64(rfosdisk.disk[1],&s);
+		stat64(rfosdisk.disk[2],&s2);
+		fseeko64(disk[0],0,SEEK_SET);
+		fseeko64(disk[1],0,SEEK_SET);
+		while(TRUE){
+			fread(buf,1,buffersize,disk[1]);
+			if(!feof(disk[1])){
+				fwrite(buf,1,buffersize,disk[0]);
+			}
+			else{
+				if(s.st_size % buffersize != 0)
+					fwrite(buf,1,s.st_size % buffersize,disk[0]);
+				break;
+			}
+			
+		}
+		passtwochkpt:
+		vblock[1].diskno = 1;
+		vblock[1].blocksize = 1024;
+		vblock[1].numblock = s2.st_size/vblock[1].blocksize;
+		vblock[1].bitvec_bl = ceil((vblock[1].numblock*1.0)/8/vblock[1].blocksize);
+		vblock[1].free = vblock[1].numblock-vblock[1].bitvec_bl-1;
+		vblock[1].numfile = 0;
+		vblock[1].inv_file = 0;
+		vblock[1].file_ent_bl = 0;
+		bitvec[1] = g_new(gchar,vblock[1].bitvec_bl*vblock[1].blocksize);
+		j=0;
+		guint32 startblock = vblock[1].bitvec_bl+1;
+		for(i=0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=startblock)goto filefmtchkpt3;
+				bitvec[1][i] = bitvec[1][i] | bytechk[k];
+			j++;
+			}
+		}
+	filefmtchkpt3:
+
+	//write disk 3-4
+	for(n = 2;n<rfosdisk.numdisk;n++){
+		fseeko64(disk[n],0,SEEK_SET);
+		fwrite(&vblock[1],vblock[1].blocksize,1,disk[n]);
+		fwrite(bitvec[1],1,vblock[1].bitvec_bl*vblock[1].blocksize,disk[n]);
+	}
+
+		fseeko64(disk[1],0,SEEK_SET);
+		fseeko64(disk[2],0,SEEK_SET);
+		fread(&vblock[0],sizeof(VCB),1,disk[1]);
+		fread(&vblock[1],sizeof(VCB),1,disk[2]);
+		goto readdatapt;
+	}
+	else if(pass == 4){				
+		// wrong placement of disk0
+		//this will swap rfosdisk.disk properties
+		// and relay data with newly formatted disk.
+		fclose(disk[2]);
+		fclose(disk[0]);
+		disk[0] = fopen64(rfosdisk.disk[2],"rb+");
+		disk[2] = fopen64(rfosdisk.disk[0],"rb+");
+		gchar* temp1 = g_strdup(rfosdisk.disk[0]);
+		g_free(rfosdisk.disk[0]);
+		rfosdisk.disk[0] = g_strdup(rfosdisk.disk[2]);
+		g_free(rfosdisk.disk[2]);
+		rfosdisk.disk[2] = g_strdup(temp1);
+		g_free(temp1);
+		goto passonechkpt;
+	}
+	else if(pass == 8){
+		//similar to above
+		fclose(disk[3]);
+		fclose(disk[0]);
+		disk[0] = fopen64(rfosdisk.disk[3],"rb+");
+		disk[3] = fopen64(rfosdisk.disk[0],"rb+");
+		gchar* temp1 = g_strdup(rfosdisk.disk[0]);
+		g_free(rfosdisk.disk[0]);
+		rfosdisk.disk[0] = g_strdup(rfosdisk.disk[3]);
+		g_free(rfosdisk.disk[3]);
+		rfosdisk.disk[3] = g_strdup(temp1);
+		g_free(temp1);
+		goto passonechkpt;
+	}
+	else if(pass == 3 && rfosdisk.numdisk > 2){
+		//format last 2 disk and continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 6){
+		//Wrong placement of disk0-1
+		//Rearrange and format last 1-2 disk(s) and
+		// continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 12){
+		//Wrong placement of disk0-1
+		//Rearrange and format last 2 disks and
+		// continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 5){
+		//Wrong placement of disk0-1
+		//Rearrange and format last 1-2 disk(s) and
+		// continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 9){
+		//Wrong placement of disk0-1
+		//Rearrange and format last 2 disks and
+		// continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 10){
+		//Wrong placement of disk0-1
+		//Rearrange and format last 2 disks and
+		// continue initialized RFOS
+		goto passtwochkpt;
+	}
+	else if(pass == 7){
+		//Case first 2 disk OK(or last 2 disk OK) but first/last is not
+		//Check for alignment and relay data (if have)
+		//and continue initialized RFOS
+	}
+	else if(pass == 11){
+		//Case first 2 disk OK(or last 2 disk OK) but first/last is not
+		//Check for alignment and relay data
+		//and continue initialized RFOS
+	}
+	else if(pass == 13){
+		//Case first 2 disk OK(or last 2 disk OK) but first/last is not
+		//Check for alignment and relay data
+		//and continue initialized RFOS
+	}
+	else if(pass == 14){
+		//Case first 2 disk OK(or last 2 disk OK) but first/last is not
+		//Check for alignment and relay data
+		//and continue initialized RFOS
+	}
+	else{ // pass == 15 or pass == 1-2 if all disks are success to read,default is read data from disk0
+              // if disk 2-3 are add read it also.
 	readdatapt:
 	g_printf("FILE SYSTEM DETAIL....\n");
 	g_printf("DISK NO:%d\n",vblock[0].diskno);
@@ -1491,14 +1742,15 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 	g_printf("FREE:%d\n",vblock[0].free);
 	g_printf("FILE COUNT:%d\n",vblock[0].numfile);
 	g_printf("INVALID FILE:%d\n",vblock[0].inv_file);
-	bitvec = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
+	bitvec[0] = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
 	fseeko64(disk[0],vblock[0].blocksize,SEEK_SET);
-	fread(bitvec,1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[0]);
-	guint32 i,j=0,bituse=0,k;
+	fread(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[0]);
+	j=0;
+	guint32 bituse=0;
 	for(i = 0;;i++){
 		for(k=0;k<8;k++){
 			if(j>=vblock[0].numblock)goto filerdrchkpt;
-			if((bitvec[i] & bytechk[k]) == bytechk[k])bituse++;
+			if((bitvec[0][i] & bytechk[k]) == bytechk[k])bituse++;
 			j++;
 		}
 	}
@@ -1525,6 +1777,28 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 		entry->fileno = i;
 
 		g_hash_table_insert(filetable,entry->key,entry);
+	}
+	//read disk2-3 if have
+	if(rfosdisk.numdisk>2){
+		//will come back to check pre-set of vblock[1]
+		g_printf("DISK NO:%d\n",vblock[1].diskno);
+		g_printf("BLOCK SIZE:%d\n",vblock[1].blocksize);
+		g_printf("NUMBLOCK:%d\n",vblock[1].numblock);
+		g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock[1].bitvec_bl);
+		g_printf("FREE:%d\n",vblock[1].free);
+		bitvec[1] = g_new(gchar,vblock[1].bitvec_bl*vblock[1].blocksize);
+		fseeko64(disk[2],vblock[1].blocksize,SEEK_SET);
+		fread(bitvec[1],1,vblock[1].bitvec_bl*vblock[1].blocksize,disk[2]);
+		j=0;bituse=0;
+		for(i = 0;;i++){
+			for(k=0;k<8;k++){
+				if(j>=vblock[1].numblock)goto filerdrchkpt1;
+				if((bitvec[1][i] & bytechk[k]) == bytechk[k])bituse++;
+				j++;
+			}
+		}
+	filerdrchkpt1:
+	g_printf("NUM OF BLOCK USED:%d\n",bituse);
 	}
 }
 
