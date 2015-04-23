@@ -1402,8 +1402,8 @@ for(n = 0;n<rfosdisk.numdisk;n++){
 //1111
 for(n = 0;n < rfosdisk.numdisk;n++)
 {
-	fread(&vblock[0],sizeof(VCB),1,disk[n]);
-	if(vblock[0].numblock != 0) pass = pass | bytechk[7-n];
+	fread(&vblock[n/2],sizeof(VCB),1,disk[n]);
+	if(vblock[n/2].numblock != 0) pass = pass | bytechk[7-n];
 }
 
 	if(pass == 0 && rfosdisk.numdisk <=2){ // case both disks has no data
@@ -2545,8 +2545,107 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;
 		}
-		else if(TRUE){ //1110 123
-		} //to be continued
+		else if(tempvcb[2].diskno == 0 && tempvcb[3].diskno == 0){ 
+			//swap disk 2 - disk 0
+			//swap disk 1 - disk 3
+			//relay data from disk 3 to disk 2 and continue initialized RFOS
+			fclose(disk[2]);
+			fclose(disk[0]);
+			disk[0] = fopen64(rfosdisk.disk[2],"rb+");
+			disk[2] = fopen64(rfosdisk.disk[0],"rb+");
+			gchar* temp1 = g_strdup(rfosdisk.disk[0]);
+			g_free(rfosdisk.disk[0]);
+			rfosdisk.disk[0] = g_strdup(rfosdisk.disk[2]);
+			g_free(rfosdisk.disk[2]);
+			rfosdisk.disk[2] = g_strdup(temp1);
+			g_free(temp1);
+			fclose(disk[3]);
+			fclose(disk[1]);
+			disk[1] = fopen64(rfosdisk.disk[3],"rb+");
+			disk[3] = fopen64(rfosdisk.disk[1],"rb+");
+			temp1 = g_strdup(rfosdisk.disk[1]);
+			g_free(rfosdisk.disk[1]);
+			rfosdisk.disk[1] = g_strdup(rfosdisk.disk[3]);
+			g_free(rfosdisk.disk[3]);
+			rfosdisk.disk[3] = g_strdup(temp1);
+			g_free(temp1);
+			
+			stat64(rfosdisk.disk[3],&s);
+			fseeko64(disk[2],0,SEEK_SET);
+			fseeko64(disk[3],0,SEEK_SET);
+			while(TRUE){
+				fread(buf,1,buffersize,disk[3]);
+				if(!feof(disk[3])){
+					fwrite(buf,1,buffersize,disk[2]);
+				}
+				else{
+					if(s.st_size % buffersize != 0)
+						fwrite(buf,1,s.st_size % buffersize,disk[2]);
+					break;
+				}			
+			}
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
+			goto readdatapt;
+		}
+		else if(tempvcb[1].diskno == 1 && tempvcb[2].diskno == 1){ 
+			//swap disk 1 - disk 3
+			//relay data from disk 1 to disk 0
+			//continue initialized RFOS
+			fclose(disk[3]);
+			fclose(disk[1]);
+			disk[1] = fopen64(rfosdisk.disk[3],"rb+");
+			disk[3] = fopen64(rfosdisk.disk[1],"rb+");
+			gchar *temp1 = g_strdup(rfosdisk.disk[1]);
+			g_free(rfosdisk.disk[1]);
+			rfosdisk.disk[1] = g_strdup(rfosdisk.disk[3]);
+			g_free(rfosdisk.disk[3]);
+			rfosdisk.disk[3] = g_strdup(temp1);
+			g_free(temp1);
+			
+			pass14chkpt:
+			stat64(rfosdisk.disk[1],&s);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[1],0,SEEK_SET);
+			while(TRUE){
+				fread(buf,1,buffersize,disk[1]);
+				if(!feof(disk[1])){
+					fwrite(buf,1,buffersize,disk[0]);
+				}
+				else{
+					if(s.st_size % buffersize != 0)
+						fwrite(buf,1,s.st_size % buffersize,disk[0]);
+					break;
+				}			
+			}
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
+			goto readdatapt;
+		}
+		else if(tempvcb[1].diskno == 1 && tempvcb[3].diskno == 1){
+		//swap disk 1 - disk 2
+		//relay data from disk 1 to disk 0 and continue initialized RFOS
+			fclose(disk[2]);
+			fclose(disk[1]);
+			disk[1] = fopen64(rfosdisk.disk[2],"rb+");
+			disk[2] = fopen64(rfosdisk.disk[1],"rb+");
+			gchar *temp1 = g_strdup(rfosdisk.disk[1]);
+			g_free(rfosdisk.disk[1]);
+			rfosdisk.disk[1] = g_strdup(rfosdisk.disk[2]);
+			g_free(rfosdisk.disk[2]);
+			rfosdisk.disk[2] = g_strdup(temp1);
+			g_free(temp1);
+			goto pass14chkpt;
+		}
+		else if(tempvcb[2].diskno == 1 && tempvcb[3].diskno == 1){ //1110 123
+			//relay data from disk 1 to disk 0 and continue initialized RFOS
+			goto pass14chkpt;		
+		}
+		else{exit(1);}
 	}
 	else{ // pass == 15 or pass == 1-2 if all disks are success to read,default is read data from disk0
               // if disk 2-3 are add read it also.
