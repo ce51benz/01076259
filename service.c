@@ -256,7 +256,7 @@ pthread_exit(0);
 }
 //worker function for get cmd
 void *do_handle_get(void *pa){
-guint err;int i,primary;gboolean isBoth = FALSE;
+guint err;int i,primary[2],pri=0;gboolean isBoth[2] = {FALSE,FALSE};
 FILE_ENT_INMEM *entry;
 guint32 nextblock;
 FILE *disk[rfosdisk.numdisk];
@@ -331,55 +331,116 @@ getput_param *p = (getput_param*)pa;
 			disk[i] = fopen64(rfosdisk.disk[i],"rb+");
 			//********************************	
 			if(disk[0]&&disk[1]){
-				primary = 0;isBoth = TRUE;
+				primary[0] = 0;isBoth[0] = TRUE;
 			}
 			else if(disk[0]&&!disk[1])
-				primary = 0;
+				primary[0] = 0;
 			else
-				primary = 1;
+				primary[0] = 1;
+			
+			if(disk[2]&&disk[3]){
+				primary[1] = 2;isBoth[1] = TRUE;
+			}
+			else if(disk[2]&&!disk[3])
+				primary[1] = 2;
+			else
+				primary[1] = 3;
 			DBLOCK cur;
 			cur.next = entry->sblock;
 			nextblock = 0;
 			//----------------------------
 			if(entry->size == 0)goto bypassgetblkpt;
+			if(cur.next >= vblock[0].numblock){
+				cur.next = cur.next - vblock[0].numblock;
+				pri = 1;
+			}
 			while(TRUE){
-				if((nextblock+1)-cur.next) 
-					fseeko64(disk[primary],cur.next*vblock[0].blocksize,SEEK_SET);
+				//=============================================
+				if((nextblock+1)-cur.next)
+					fseeko64(disk[primary[pri]],cur.next*vblock[0].blocksize,SEEK_SET);
 				nextblock = cur.next;
-				fread(&cur,vblock[0].blocksize,1,disk[primary]);
+				fread(&cur,vblock[0].blocksize,1,disk[primary[pri]]);
+				//=============================================
+
+				//9999999999999999999999999999999999999999999999999999999999
 				if(!cur.next){
 					if(entry->size % desiresize != 0){
 						fwrite(cur.data,1,entry->size % desiresize,fp);
 						if(ferror(fp)){err=errno;fclose(fp);
-							if(isBoth)
-								for(i = 0;i<rfosdisk.numdisk;i++)
+							if(isBoth[0])
+								for(i = 0;i<2;i++)
 									fclose(disk[i]);
 							else
-								fclose(disk[primary]);
+								fclose(disk[primary[0]]);
+							if(rfosdisk.numdisk > 2){
+								if(isBoth[1])
+									for(i = 2;i<rfosdisk.numdisk;i++)
+										fclose(disk[i]);
+								else
+									fclose(disk[primary[1]]);
+							}
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					}
 					else{
 						fwrite(cur.data,1,desiresize,fp);
 					if(ferror(fp)){err=errno;fclose(fp);
-							if(isBoth)
-								for(i = 0;i<rfosdisk.numdisk;i++)
+							if(isBoth[0])
+								for(i = 0;i<2;i++)
 									fclose(disk[i]);
 							else
-								fclose(disk[primary]);
+								fclose(disk[primary[0]]);
+							if(rfosdisk.numdisk > 2){
+								if(isBoth[1])
+									for(i = 2;i<rfosdisk.numdisk;i++)
+										fclose(disk[i]);
+								else
+									fclose(disk[primary[1]]);
+							}
 						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 					    }
 					break;
 				}
+				else if(cur.next >= vblock[0].numblock && !pri){
+					//write current data and change disk to read data from another disk with the change of
+					//cur.next by subtract from numblock and change primary disk to read from.
+					fwrite(cur.data,1,desiresize,fp);
+					if(ferror(fp)){err=errno;fclose(fp);
+							if(isBoth[0])
+								for(i = 0;i<2;i++)
+									fclose(disk[i]);
+							else
+								fclose(disk[primary[0]]);
+							if(rfosdisk.numdisk > 2){
+								if(isBoth[1])
+									for(i = 2;i<rfosdisk.numdisk;i++)
+										fclose(disk[i]);
+								else
+									fclose(disk[primary[1]]);
+							}
+					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
+					cur.next = cur.next - vblock[0].numblock;
+					nextblock = 0;
+					pri = 1;
+				}
 				else{
 					fwrite(cur.data,1,desiresize,fp);
 					if(ferror(fp)){err=errno;fclose(fp);
-							if(isBoth)
-								for(i = 0;i<rfosdisk.numdisk;i++)
+							if(isBoth[0])
+								for(i = 0;i<2;i++)
 									fclose(disk[i]);
 							else
-								fclose(disk[primary]);
+								fclose(disk[primary[0]]);
+							if(rfosdisk.numdisk > 2){
+								if(isBoth[1])
+									for(i = 2;i<rfosdisk.numdisk;i++)
+										fclose(disk[i]);
+								else
+									fclose(disk[primary[1]]);
+							}
 					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
+				//9999999999999999999999999999999999999999999999999999999999
+				
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
 			}
 			bypassgetblkpt:
@@ -397,18 +458,25 @@ getput_param *p = (getput_param*)pa;
 			//------------------------		
 			
 			//determine number of disk to write update!
-			if(isBoth){
-				for(i=0;i<rfosdisk.numdisk;i++){	
-		        	fseeko64(disk[i],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(entry->fileno*sizeof(FILE_ENT))),SEEK_SET);			
+			if(isBoth[0]){
+				for(i=0;i<2;i++){
+		        	fseeko64(disk[i],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(entry->fileno*sizeof(FILE_ENT))),SEEK_SET);		
 				fwrite(&fe,sizeof(FILE_ENT),1,disk[i]);
 				fclose(disk[i]);
 				}
 			}
 			else    {
-				fseeko64(disk[primary],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(entry->fileno*sizeof(FILE_ENT))),SEEK_SET);			
-				fwrite(&fe,sizeof(FILE_ENT),1,disk[primary]);
-				fclose(disk[primary]);
+				fseeko64(disk[primary[0]],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(entry->fileno*sizeof(FILE_ENT))),SEEK_SET);			
+				fwrite(&fe,sizeof(FILE_ENT),1,disk[primary[0]]);
+				fclose(disk[primary[0]]);
 				}
+			if(rfosdisk.numdisk > 2){
+				if(isBoth[1])
+					for(i = 2;i<rfosdisk.numdisk;i++)
+						fclose(disk[i]);
+				else
+					fclose(disk[primary[1]]);
+			}
 			//------------------------    
 			fclose(fp);remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);	
 			err = 0;
