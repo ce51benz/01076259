@@ -400,28 +400,6 @@ getput_param *p = (getput_param*)pa;
 					    }
 					break;
 				}
-				else if(cur.next >= vblock[0].numblock && !pri){
-					//write current data and change disk to read data from another disk with the change of
-					//cur.next by subtract from numblock and change primary disk to read from.
-					fwrite(cur.data,1,desiresize,fp);
-					if(ferror(fp)){err=errno;fclose(fp);
-							if(isBoth[0])
-								for(i = 0;i<2;i++)
-									fclose(disk[i]);
-							else
-								fclose(disk[primary[0]]);
-							if(rfosdisk.numdisk > 2){
-								if(isBoth[1])
-									for(i = 2;i<rfosdisk.numdisk;i++)
-										fclose(disk[i]);
-								else
-									fclose(disk[primary[1]]);
-							}
-					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
-					cur.next = cur.next - vblock[0].numblock;
-					nextblock = 0;
-					pri = 1;
-				}
 				else{
 					fwrite(cur.data,1,desiresize,fp);
 					if(ferror(fp)){err=errno;fclose(fp);
@@ -439,6 +417,17 @@ getput_param *p = (getput_param*)pa;
 							}
 					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
+				if(cur.next >= vblock[0].numblock && !pri){
+					cur.next = cur.next - vblock[0].numblock;
+					nextblock = 0;
+					pri = 1;
+				}
+				else if(cur.next >= vblock[1].numblock && pri){
+					cur.next = cur.next - vblock[1].numblock;
+					nextblock = 0;
+					pri = 0;
+				}
+				else continue;
 				//9999999999999999999999999999999999999999999999999999999999
 				
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
@@ -2192,7 +2181,7 @@ pthread_exit(0);
 }
 
 void *do_handle_remove(void *pa){
-guint err;int i,primary[2];gboolean isBoth[2] = {FALSE,FALSE};
+guint err;int i,primary[2],pri=0;gboolean isBoth[2] = {FALSE,FALSE};
 key_param *p = (key_param*)pa;
 FILE_ENT_INMEM *fentry;
 FILE_ENT fe;
@@ -2239,42 +2228,31 @@ else{
 				primary[1] = 2;
 			else
 				primary[1] = 3;
-			DBLOCK data;
-			data.next = fentry->sblock;
+			DBLOCK cur;
+			cur.next = fentry->sblock;
 			if(fentry->size == 0)
 				goto bypassdeallocblkpt;
-			if(data.next >= vblock[0].numblock)
-				goto cleardisk23pt;
+			if(cur.next >= vblock[0].numblock){
+				cur.next = cur.next - vblock[0].numblock;
+				pri = 1;
+			}
 			//--------------------------------------------
-			//clear block on disk01
-			else if(rfosdisk.numdisk > 2){
+			//clear block
 				do{
-					bitvec[0][data.next/8] = bitvec[0][data.next/8] & (~bytechk[data.next%8]);
-					fseeko64(disk[primary[0]],(data.next)*vblock[0].blocksize,SEEK_SET);
-					fread(&data,vblock[0].blocksize,1,disk[primary[0]]);
-					delcnt[0]++;
-					if(data.next >= vblock[0].numblock)break;
-				}while(data.next);
-			}
-			else{
-				do{
-					bitvec[0][data.next/8] = bitvec[0][data.next/8] & (~bytechk[data.next%8]);
-					fseeko64(disk[primary[0]],(data.next)*vblock[0].blocksize,SEEK_SET);
-					fread(&data,vblock[0].blocksize,1,disk[primary[0]]);
-					delcnt[0]++;
-				}while(data.next);
-			}
-			cleardisk23pt:
-			if(data.next){
-				data.next = data.next - vblock[0].numblock;
-				//clear block on disk23
-				do{
-					bitvec[1][data.next/8] = bitvec[1][data.next/8] & (~bytechk[data.next%8]);
-					fseeko64(disk[primary[1]],(data.next)*vblock[1].blocksize,SEEK_SET);
-					fread(&data,vblock[1].blocksize,1,disk[primary[1]]);
-					delcnt[1]++;
-				}while(data.next);
-			}
+					bitvec[pri][cur.next/8] = bitvec[pri][cur.next/8] & (~bytechk[cur.next%8]);
+					fseeko64(disk[primary[pri]],(cur.next)*vblock[pri].blocksize,SEEK_SET);
+					fread(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+					delcnt[pri]++;
+					if(cur.next >= vblock[0].numblock && !pri){
+						cur.next = cur.next - vblock[0].numblock;
+						pri = 1;
+					}
+					else if(cur.next >= vblock[1].numblock && pri){
+						cur.next = cur.next - vblock[1].numblock;
+						pri = 0;
+					}
+					else continue;
+				}while(cur.next);
 			//--------------------------------------------
 			//update valid properties
 			bypassdeallocblkpt:
@@ -2293,64 +2271,17 @@ else{
 			if(rfosdisk.numdisk > 2)
 				vblock[1].free+=delcnt[1];
 			
-			if(isBoth[0] && isBoth[1])
-			for(i = 0;i<rfosdisk.numdisk;i++){
+			if(isBoth[0])
+			for(i = 0;i<2;i++){
 				fseeko64(disk[i],0,SEEK_SET);
-				fwrite(&vblock[i/2],vblock[i/2].blocksize,1,disk[i]);
-				if(i<2){
+				fwrite(&vblock[0],vblock[0].blocksize,1,disk[i]);
 				fseeko64(disk[i],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
 				fwrite(&fe,sizeof(FILE_ENT),1,disk[i]);
-				}
-				if(delcnt[i/2] != 0){
-					fseeko64(disk[i],vblock[i/2].blocksize,SEEK_SET);
-					fwrite(bitvec[i/2],1,(vblock[i/2].bitvec_bl*vblock[i/2].blocksize),disk[i]);	
+				if(delcnt[0] != 0){
+					fseeko64(disk[i],vblock[0].blocksize,SEEK_SET);
+					fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[i]);	
 				}
 				fclose(disk[i]);
-			}
-			else if(!isBoth[0] && isBoth[1]){
-				fseeko64(disk[primary[0]],0,SEEK_SET);
-				fwrite(&vblock[0],vblock[0].blocksize,1,disk[primary[0]]);
-				fseeko64(disk[primary[0]],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
-				fwrite(&fe,sizeof(FILE_ENT),1,disk[primary[0]]);
-				if(delcnt[0] != 0){
-					fseeko64(disk[primary[0]],vblock[0].blocksize,SEEK_SET);
-					fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[primary[0]]);
-				}
-				fclose(disk[primary[0]]);
-							
-				for(i = 2;i<rfosdisk.numdisk;i++){
-					if(delcnt[1] != 0){
-						fseeko64(disk[i],0,SEEK_SET);
-						fwrite(&vblock[1],vblock[1].blocksize,1,disk[i]);
-						fseeko64(disk[i],vblock[1].blocksize,SEEK_SET);
-						fwrite(bitvec[1],1,(vblock[1].bitvec_bl*vblock[1].blocksize),disk[i]);	
-					}
-					fclose(disk[i]);
-				}
-			}
-			
-			else if(isBoth[0] && !isBoth[1]){
-				for(i = 0;i<2;i++){
-					fseeko64(disk[i],0,SEEK_SET);
-					fwrite(&vblock[0],vblock[0].blocksize,1,disk[i]);
-					fseeko64(disk[i],(((vblock[0].bitvec_bl+1)*vblock[0].blocksize) +(fentry->fileno*sizeof(FILE_ENT))),SEEK_SET);
-					fwrite(&fe,sizeof(FILE_ENT),1,disk[i]);
-					if(delcnt[0] != 0){
-						fseeko64(disk[i],vblock[0].blocksize,SEEK_SET);
-						fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[i]);	
-					}
-					fclose(disk[i]);
-				}
-				
-				if(rfosdisk.numdisk > 2){
-					if(delcnt[1] != 0){
-						fseeko64(disk[primary[1]],0,SEEK_SET);
-						fwrite(&vblock[1],vblock[1].blocksize,1,disk[primary[1]]);
-						fseeko64(disk[primary[1]],vblock[1].blocksize,SEEK_SET);
-						fwrite(bitvec[1],1,(vblock[1].bitvec_bl*vblock[1].blocksize),disk[primary[1]]);	
-					}
-					fclose(disk[primary[1]]);
-				}
 			}
 			else{
 				fseeko64(disk[primary[0]],0,SEEK_SET);
@@ -2362,6 +2293,29 @@ else{
 					fwrite(bitvec[0],1,(vblock[0].bitvec_bl*vblock[0].blocksize),disk[primary[0]]);	
 				}
 				fclose(disk[primary[0]]);
+			}
+			
+			if(delcnt[1] != 0){
+				if(isBoth[1]){
+					for(i = 2;i<rfosdisk.numdisk;i++){
+						fseeko64(disk[i],0,SEEK_SET);
+						fwrite(&vblock[1],vblock[1].blocksize,1,disk[i]);
+						fwrite(bitvec[1],1,(vblock[1].bitvec_bl*vblock[1].blocksize),disk[i]);	
+					}
+				}
+				else{
+					fseeko64(disk[primary[1]],0,SEEK_SET);
+					fwrite(&vblock[1],vblock[1].blocksize,1,disk[primary[1]]);
+					fwrite(bitvec[1],1,(vblock[1].bitvec_bl*vblock[1].blocksize),disk[primary[1]]);	
+				}
+			}
+			
+			if(rfosdisk.numdisk > 2){
+				if(isBoth[1]){
+					for(i = 2;i<rfosdisk.numdisk;i++)
+						fclose(disk[i]);
+				}
+				else fclose(disk[primary[1]]);
 			}
 
 			rfosRemOpenForWrite(p->key);
