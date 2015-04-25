@@ -579,23 +579,49 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					goto bypassallocblkpt0;
 				}
 				if(!vblock[0].free)goto disk23wrpt;
+				disk01wrpt:
+				isFirst = TRUE;
 				//=====================================================================
 				j = ((vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8)*8;
 				for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
 						if(j>=vblock[0].numblock)goto disk23wrpt; //0
  						if((bitvec[0][i] & bytechk[k]) == 0){
+							//*************************************************
 							if(isFirst){
-								cur.next = 0;
-								fread(cur.data,1,desiresize,fp);
-								if(feof(fp)){
-									blockloc = (i*8)+k;
-									bitvec[0][i] = bitvec[0][i] | bytechk[k];
-									goto enddisk01wrpt;
+								if(!dataarr[1]->len){
+									cur.next = 0;
+									fread(cur.data,1,desiresize,fp);
+									if(feof(fp)){
+										blockloc = (i*8)+k;
+										bitvec[0][i] = bitvec[0][i] | bytechk[k];
+										goto enddisk01wrpt;
+									}
+									blockloc = ((i*8)+k);
 								}
-								blockloc = (i*8)+k;
+								else{
+									//*************************************
+									cur.next = ((i*8)+k) + vblock[1].numblock;
+									//*************************************
+									g_array_append_val(dataarr[1],cur);
+									fread(cur.data,1,desiresize,fp);
+									cur.next = 0;
+									if(feof(fp)){
+										if(fe.size % desiresize != 0){
+											bitvec[0][i] = bitvec[0][i] | bytechk[k];
+											goto enddisk01wrpt;
+										}
+										else{
+											cur = g_array_index(dataarr[1],DBLOCK,(dataarr[1]->len-1));
+											cur.next = 0;
+											g_array_remove_index(dataarr[1],(dataarr[1]->len-1));
+											goto enddisk23wrpt;
+										}
+									}	
+								}
 								isFirst = FALSE;
 							}
+							//*************************************************
 							else{
 								cur.next = (i*8)+k;
 								g_array_append_val(dataarr[0],cur);
@@ -625,14 +651,14 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				j = ((vblock[1].bitvec_bl+1)/8)*8;
 				for(i = (vblock[1].bitvec_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
-						if(j>=vblock[1].numblock)goto enddisk23wrpt;
+						if(j>=vblock[1].numblock)goto disk01wrpt;
  						if((bitvec[1][i] & bytechk[k]) == 0){
 							if(isFirst){
 								if(!dataarr[0]->len){
 									cur.next = 0;
 									fread(cur.data,1,desiresize,fp);
 									if(feof(fp)){
-										blockloc = (i*8)+k;
+										blockloc = ((i*8)+k) + vblock[0].numblock;
 										bitvec[1][i] = bitvec[1][i] | bytechk[k];
 										goto enddisk23wrpt;
 									}
@@ -1028,6 +1054,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 								nextblock = 0;
 								pri = 1;
 							}
+							else if(cur.next >= vblock[1].numblock && pri){
+								cur.next = cur.next - vblock[1].numblock;
+								nextblock = 0;
+								pri = 0;
+							}
+							else ;
 						}while(cur.next);
 						//------------------10 readonly-----------------
 
@@ -1180,20 +1212,44 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						if(!hfentry->size){
 				if(!vblock[0].free)goto disk23wrpt3;
 				//=====================================================================
+				disk01wrpt3:
+				isFirst = TRUE;
 				j = ((vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8)*8;
 				for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
 						if(j>=vblock[0].numblock)goto disk23wrpt3; //0
  						if((bitvec[0][i] & bytechk[k]) == 0){
 							if(isFirst){
-								cur.next = 0;
-								fread(cur.data,1,desiresize,fp);
-								if(feof(fp)){
-									blockloc = (i*8)+k;
-									bitvec[0][i] = bitvec[0][i] | bytechk[k];
-									goto enddisk01wrpt3;
+								if(!dataarr[1]->len){
+									cur.next = 0;
+									fread(cur.data,1,desiresize,fp);
+									if(feof(fp)){
+										blockloc = (i*8)+k;
+										bitvec[0][i] = bitvec[0][i] | bytechk[k];
+										goto enddisk01wrpt3;
+									}
+									blockloc = ((i*8)+k);
 								}
-								blockloc = (i*8)+k;
+								else{
+									//*************************************
+									cur.next = ((i*8)+k) + vblock[1].numblock;
+									//*************************************
+									g_array_append_val(dataarr[1],cur);
+									fread(cur.data,1,desiresize,fp);
+									cur.next = 0;
+									if(feof(fp)){
+										if(fe.size % desiresize != 0){
+											bitvec[0][i] = bitvec[0][i] | bytechk[k];
+											goto enddisk01wrpt3;
+										}
+										else{
+											cur = g_array_index(dataarr[1],DBLOCK,(dataarr[1]->len-1));
+											cur.next = 0;
+											g_array_remove_index(dataarr[1],(dataarr[1]->len-1));
+											goto enddisk23wrpt3;
+										}
+									}	
+								}
 								isFirst = FALSE;
 							}
 							else{
@@ -1225,14 +1281,14 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				j = ((vblock[1].bitvec_bl+1)/8)*8;
 				for(i = (vblock[1].bitvec_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
-						if(j>=vblock[1].numblock)goto enddisk23wrpt3;
+						if(j>=vblock[1].numblock)goto disk01wrpt3;
  						if((bitvec[1][i] & bytechk[k]) == 0){
 							if(isFirst){
 								if(!dataarr[0]->len){
 									cur.next = 0;
 									fread(cur.data,1,desiresize,fp);
 									if(feof(fp)){
-										blockloc = (i*8)+k;
+										blockloc = ((i*8)+k) + vblock[0].numblock;
 										bitvec[1][i] = bitvec[1][i] | bytechk[k];
 										goto enddisk23wrpt3;
 									}
@@ -1314,40 +1370,74 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 								nextblock = 0;
 								pri = 1;
 							}
+							else if(cur.next >= vblock[1].numblock && pri){
+								cur.next = cur.next - vblock[1].numblock;
+								nextblock = 0;
+								pri = 0;
+							}
+							else ;
 						}while(cur.next);
 						//-----------------14 readonly----------------
 						if(pri == 1){
+							if(!vblock[1].free)
+								goto disk01wrpt4;
 							isFirst = FALSE;
-							goto disk23wrpt4;
+							goto startdisk23;
 						}
-						else if(!vblock[0].free && pri == 0){
-							isFirst = TRUE;
-							goto disk23wrpt4;
+						else {
+							if(!vblock[0].free)
+								goto disk23wrpt4;
+							isFirst = FALSE;
+							goto startdisk01;
 						}
-						else
-							isFirst = TRUE;
+						
 						
 						//The last block has invalid block no.(has no.0)
+						disk01wrpt4:
+						isFirst = TRUE;
+						startdisk01:
 						j = ((vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8)*8;
 						for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 							for(k=0;k<8;k++){
 								if(j>=vblock[0].numblock)goto disk23wrpt4; //0
  								if((bitvec[0][i] & bytechk[k]) == 0){
-									cur.next = (i*8)+k;
-									g_array_append_val(dataarr[0],cur);
-									cur.next = 0;
-									fread(cur.data,1,desiresize,fp);
-									if(feof(fp)){
-										if(fe.size % desiresize != 0){
-											blockwrct[0]++;
-											bitvec[0][i] = bitvec[0][i] | bytechk[k];
-										}
-										else{
-											cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
+									if(isFirst){
+										cur.next = ((i*8)+k) + vblock[1].numblock;
+										g_array_append_val(dataarr[1],cur);
+										cur.next = 0;
+										fread(cur.data,1,desiresize,fp);
+										if(feof(fp)){
+											if(fe.size % desiresize != 0){
+												blockwrct[0]++;
+												bitvec[0][i] = bitvec[0][i] | bytechk[k];
+												goto enddisk01wrpt4;
+											}
+											else{
+											cur = g_array_index(dataarr[1],DBLOCK,(dataarr[1]->len-1));
 											cur.next = 0;
-											g_array_remove_index(dataarr[0],(dataarr[0]->len-1));
+											g_array_remove_index(dataarr[1],(dataarr[1]->len-1));
+											goto enddisk23wrpt4;
+											}
 										}
-										goto enddisk01wrpt4;
+									isFirst = FALSE;
+									}
+									else{
+										cur.next = (i*8)+k;
+										g_array_append_val(dataarr[0],cur);
+										cur.next = 0;
+										fread(cur.data,1,desiresize,fp);
+										if(feof(fp)){
+											if(fe.size % desiresize != 0){
+												blockwrct[0]++;
+												bitvec[0][i] = bitvec[0][i] | bytechk[k];
+											}
+											else{
+												cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
+												cur.next = 0;
+												g_array_remove_index(dataarr[0],(dataarr[0]->len-1));
+											}
+											goto enddisk01wrpt4;
+										}
 									}
 									blockwrct[0]++;
 									bitvec[0][i] = bitvec[0][i] | bytechk[k];
@@ -1356,11 +1446,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 							}
 						}
 						disk23wrpt4:
-						
+						isFirst = TRUE;
+						startdisk23:
 						j = ((vblock[1].bitvec_bl+1)/8)*8;
 						for(i = (vblock[1].bitvec_bl+1)/8;;i++){
 							for(k=0;k<8;k++){
-								if(j>=vblock[1].numblock)goto enddisk23wrpt4;
+								if(j>=vblock[1].numblock)goto disk01wrpt4;
  								if((bitvec[1][i] & bytechk[k]) == 0){
 									if(isFirst){
 										cur.next = ((i*8)+k) + vblock[0].numblock;
@@ -1507,7 +1598,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						//--------------------16--------------------
 						if(isBoth[0]){
 							for(n = 0;n<2;n++){
-							fseeko64(disk[n],((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);				
+							fseeko64(disk[n],((vblock[0].bitvec_bl+1)*vblock[0].blocksize)+(hfentry->fileno*sizeof(FILE_ENT)),SEEK_SET);	
 							fwrite(&fe,sizeof(FILE_ENT),1,disk[n]);
 							if(blockwrct[0] > 0){
 								fseeko64(disk[n],0,SEEK_SET);
@@ -1588,7 +1679,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						else
 							primary[1] = 3;
 						
-						DBLOCK cur;guint tempnext;
+						DBLOCK cur;guint32 tempnext;
 						cur.next = hfentry->sblock;
 						nextblock = 0;
 						if(!fe.size){
@@ -1634,16 +1725,26 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 								nextblock = 0;
 								pri = 1;
 							}
+							else if(cur.next >= vblock[1].numblock && pri){
+								cur.next = cur.next - vblock[1].numblock;
+								nextblock = 0;
+								pri = 0;
+							}
+							else ;
 						}
 						
 						bypassallocblkpt3:
 						cur.next = tempnext;
 						//if tempnext is >= vblock[0].numblock?
 						if(cur.next >= vblock[0].numblock && !pri){
-								cur.next = cur.next - vblock[0].numblock;
-								nextblock = 0;
-								pri = 1;
-						}				
+							cur.next = cur.next - vblock[0].numblock;
+							pri = 1;
+						}
+						else if(cur.next >= vblock[1].numblock && pri){
+							cur.next = cur.next - vblock[1].numblock;
+							pri = 0;
+						}
+						else ;
 						nextblock = 0;
 						
 						while(cur.next){
@@ -1658,6 +1759,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 								nextblock = 0;
 								pri = 1;
 							}
+							else if(cur.next >= vblock[1].numblock && pri){
+								cur.next = cur.next - vblock[1].numblock;
+								nextblock = 0;
+								pri = 0;
+							}
+							else ;
 						}
 
 
@@ -1869,22 +1976,48 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					
 				if(!vblock[0].free)goto disk23wrpt2;
 				//=====================================================================
+				disk01wrpt2:
+				isFirst = TRUE;
 				j = ((vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8)*8;
 				for(i = (vblock[0].bitvec_bl+vblock[0].file_ent_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
 						if(j>=vblock[0].numblock)goto disk23wrpt2; //0
  						if((bitvec[0][i] & bytechk[k]) == 0){
+							//**********************************************
 							if(isFirst){
-								cur.next = 0;
-								fread(cur.data,1,desiresize,fp);
-								if(feof(fp)){
-									blockloc = (i*8)+k;
-									bitvec[0][i] = bitvec[0][i] | bytechk[k];
-									goto enddisk01wrpt2;
+								if(!dataarr[1]->len){
+									cur.next = 0;
+									fread(cur.data,1,desiresize,fp);
+									if(feof(fp)){
+										blockloc = (i*8)+k;
+										bitvec[0][i] = bitvec[0][i] | bytechk[k];
+										goto enddisk01wrpt2;
+									}
+									blockloc = ((i*8)+k);
 								}
-								blockloc = (i*8)+k;
+								else{
+									//*************************************
+									cur.next = ((i*8)+k) + vblock[1].numblock;
+									//*************************************
+									g_array_append_val(dataarr[1],cur);
+									fread(cur.data,1,desiresize,fp);
+									cur.next = 0;
+									if(feof(fp)){
+										if(fe.size % desiresize != 0){
+											bitvec[0][i] = bitvec[0][i] | bytechk[k];
+											goto enddisk01wrpt2;
+										}
+										else{
+											cur = g_array_index(dataarr[1],DBLOCK,(dataarr[1]->len-1));
+											cur.next = 0;
+											g_array_remove_index(dataarr[1],(dataarr[1]->len-1));
+											goto enddisk23wrpt2;
+										}
+									}	
+								}
 								isFirst = FALSE;
 							}
+							//**********************************************
 							else{
 								cur.next = (i*8)+k;
 								g_array_append_val(dataarr[0],cur);
@@ -1914,14 +2047,14 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				j = ((vblock[1].bitvec_bl+1)/8)*8;
 				for(i = (vblock[1].bitvec_bl+1)/8;;i++){
 					for(k=0;k<8;k++){
-						if(j>=vblock[1].numblock)goto enddisk23wrpt2;
+						if(j>=vblock[1].numblock)goto disk01wrpt2;
  						if((bitvec[1][i] & bytechk[k]) == 0){
 							if(isFirst){
 								if(!dataarr[0]->len){
 									cur.next = 0;
 									fread(cur.data,1,desiresize,fp);
 									if(feof(fp)){
-										blockloc = (i*8)+k;
+										blockloc = ((i*8)+k) + vblock[0].numblock;
 										bitvec[1][i] = bitvec[1][i] | bytechk[k];
 										goto enddisk23wrpt2;
 									}
@@ -2251,7 +2384,7 @@ else{
 						cur.next = cur.next - vblock[1].numblock;
 						pri = 0;
 					}
-					else continue;
+					else ;
 				}while(cur.next);
 			//--------------------------------------------
 			//update valid properties
@@ -3655,6 +3788,10 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			g_free(rfosdisk.disk[3]);
 			rfosdisk.disk[3] = g_strdup(temp1);
 			g_free(temp1);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;
 		}
 		else if(tempvcb[0].diskno == 1 && tempvcb[1].diskno == 0 && tempvcb[2].diskno == 1 && tempvcb[3].diskno == 0){
@@ -3669,6 +3806,10 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			g_free(rfosdisk.disk[3]);
 			rfosdisk.disk[3] = g_strdup(temp1);
 			g_free(temp1);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;
 		}
 		else if(tempvcb[0].diskno == 0 && tempvcb[1].diskno == 1 && tempvcb[2].diskno == 1 && tempvcb[3].diskno == 0){
@@ -3683,6 +3824,10 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			g_free(rfosdisk.disk[3]);
 			rfosdisk.disk[3] = g_strdup(temp1);
 			g_free(temp1);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;
 		}
 		else if(tempvcb[0].diskno == 1 && tempvcb[1].diskno == 0 && tempvcb[2].diskno == 0 && tempvcb[3].diskno == 1){
@@ -3697,6 +3842,10 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			g_free(rfosdisk.disk[2]);
 			rfosdisk.disk[2] = g_strdup(temp1);
 			g_free(temp1);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;
 		}
 		else if(tempvcb[0].diskno == 0 && tempvcb[1].diskno == 1 && tempvcb[2].diskno == 0 && tempvcb[3].diskno == 1){
@@ -3711,6 +3860,10 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			g_free(rfosdisk.disk[2]);
 			rfosdisk.disk[2] = g_strdup(temp1);
 			g_free(temp1);
+			fseeko64(disk[0],0,SEEK_SET);
+			fseeko64(disk[2],0,SEEK_SET);
+			fread(&vblock[0],sizeof(VCB),1,disk[0]);
+			fread(&vblock[1],sizeof(VCB),1,disk[2]);
 			goto readdatapt;		
 		}
 		else{exit(1);}
