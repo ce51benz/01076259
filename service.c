@@ -554,6 +554,8 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
     if(!ready)err = EBUSY;
     else if(strlen(p->key)!=8 || (!isAlnumStr(p->key)))
 	err = ENAMETOOLONG;
+    else if(ceil(((vblock[0].numfile-vblock[0].inv_file)*1.0*sizeof(FILE_ENT))/vblock[0].blocksize) >= vblock[0].file_ent_bl)
+	{err = EPERM;goto putchkpt;}
     else{
 	struct stat64 fst;
 	//-----------------lock-----------------
@@ -569,7 +571,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 		pthread_mutex_unlock(&actoft_lock);
 		//--------------------------------------
 		FILE *fp = fopen64(p->path,"rb");
-				
+			
 			if((hfentry = g_hash_table_lookup(filetable,p->key)) == NULL)
 			{
 				//----------------lockforkey--------------
@@ -873,14 +875,23 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					if(ceil(((vblock[0].numfile-vblock[0].inv_file)*1.0*sizeof(FILE_ENT))/vblock[0].blocksize) < vblock[0].file_ent_bl)
 					vblock[0].numfile = vblock[0].numfile+1;
 					else{
-						//will move this handle later...
 						if(isBoth[0]){
-							for(n = 0;n<rfosdisk.numdisk;n++)
+							for(n = 0;n<2;n++)
 								fclose(disk[n]);
 						}
 						else fclose(disk[primary[0]]);
+						if(rfosdisk.numdisk>2){
+							if(isBoth[1]){
+								for(n = 2;n<rfosdisk.numdisk;n++)
+									fclose(disk[n]);
+							}
+							else fclose(disk[primary[1]]);
+						}
 						err = EPERM;
-						rfosRemOpenForWrite(p->key);goto putchkpt;	
+						pthread_mutex_lock(&rfosoft_lock);
+						rfosRemOpenForWrite(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto putchkpt;	
 					}
 					/////-------------------3------------------------------
 					if(isBoth[0]){
@@ -2769,7 +2780,6 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 		//and continue initialized RFOS
 		g_printf("Relay data from disk1 to disk0 with format last 1-2 disks...\n");
 		stat64(rfosdisk.disk[1],&s);
-		stat64(rfosdisk.disk[2],&s2);
 		fseeko64(disk[0],0,SEEK_SET);
 		fseeko64(disk[1],0,SEEK_SET);
 		while(TRUE){
@@ -2785,6 +2795,7 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			
 		}
 		passtwochkpt:
+		stat64(rfosdisk.disk[2],&s2);
 		vblock[1].diskno = 1;
 		vblock[1].blocksize = 1024;
 		vblock[1].numblock = s2.st_size/vblock[1].blocksize;
@@ -2804,7 +2815,6 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 			}
 		}
 	filefmtchkpt3:
-
 	//write disk 3-4
 	for(n = 2;n<rfosdisk.numdisk;n++){
 		fseeko64(disk[n],0,SEEK_SET);
