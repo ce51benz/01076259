@@ -357,9 +357,9 @@ getput_param *p = (getput_param*)pa;
 			while(TRUE){
 				//=============================================
 				if((nextblock+1)-cur.next)
-					fseeko64(disk[primary[pri]],cur.next*vblock[0].blocksize,SEEK_SET);
+					fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
 				nextblock = cur.next;
-				fread(&cur,vblock[0].blocksize,1,disk[primary[pri]]);
+				fread(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
 				//=============================================
 
 				//9999999999999999999999999999999999999999999999999999999999
@@ -417,17 +417,13 @@ getput_param *p = (getput_param*)pa;
 							}
 					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
 				    }
-				if(cur.next >= vblock[0].numblock && !pri){
-					cur.next = cur.next - vblock[0].numblock;
+				if(cur.next >= vblock[pri].numblock){
+					cur.next = cur.next - vblock[pri].numblock;
 					nextblock = 0;
-					pri = 1;
+					if(pri)
+						pri = 0;
+					else pri =1;
 				}
-				else if(cur.next >= vblock[1].numblock && pri){
-					cur.next = cur.next - vblock[1].numblock;
-					nextblock = 0;
-					pri = 0;
-				}
-				else continue;
 				//9999999999999999999999999999999999999999999999999999999999
 				
 				//Update atime and write it back in disk to proper location (check file seq no and edit it without any confilct)
@@ -490,7 +486,7 @@ guint err;
 gboolean isFirst = TRUE;
 GArray *dataarr[2];
 DBLOCK cur;int pri=0;
-guint32 i,blockloc,j,nextblock,k,primary[2],n,blockwrct[2]={0,0},delcnt[2] = {0,0};
+guint32 i,blockloc,j,nextblock,k,primary[2],n,blockwrct[2]={0,0},delcnt[2] = {0,0},ind[2] = {0,0};
 gboolean isBoth[2] = {FALSE,FALSE};
 FILE_ENT_INMEM *hfentry;FILE_ENT fe;
 FILE *disk[rfosdisk.numdisk];
@@ -742,72 +738,48 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					primary[1] = 2;
 				else
 					primary[1] = 3;
+				
+				cur.next = blockloc;
+				pri = 0;
 				/////-------------------1------------------------------
-				if(isBoth[0]){
-					for(n = 0;n<2;n++){	
-						cur.next = blockloc;
-						nextblock = 0;
-						for(i = 0;i<dataarr[0]->len;i++){
-							if((nextblock+1)-cur.next){				
-								fseeko64(disk[n],cur.next*vblock[0].blocksize,SEEK_SET);
-							}
-							nextblock = cur.next;
-							cur = g_array_index(dataarr[0],DBLOCK,i);
-							fwrite(&cur,vblock[0].blocksize,1,disk[n]);
-						}
-					}
-				}
-				else{
-					cur.next = blockloc;
+				if(cur.next >= vblock[0].numblock){
+					pri = 1;
 					nextblock = 0;
-					for(i = 0;i<dataarr[0]->len;i++){
-						if((nextblock+1)-cur.next){				
-							fseeko64(disk[primary[0]],cur.next*vblock[0].blocksize,SEEK_SET);
+					cur.next = cur.next - vblock[0].numblock;
+				}
+				while(ind[0] < dataarr[0]->len || ind[1] < dataarr[1]->len){
+					if(isBoth[pri]){
+						if((nextblock+1)-cur.next){
+							fseeko64(disk[(2*pri)+0],cur.next*vblock[pri].blocksize,SEEK_SET);
+							fseeko64(disk[(2*pri)+1],cur.next*vblock[pri].blocksize,SEEK_SET);
 						}
 						nextblock = cur.next;
-						cur = g_array_index(dataarr[0],DBLOCK,i);
-						fwrite(&cur,vblock[0].blocksize,1,disk[primary[0]]);
-					}
-				}
-				
-				if(isBoth[1]){
-					for(n = 2;n<rfosdisk.numdisk;n++){
-						if(dataarr[0]->len > 0){
-							cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-							cur.next = cur.next - vblock[0].numblock;
+						cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+						fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+0]);
+						fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+1]);
+						ind[pri]++;
+						if(cur.next >= vblock[pri].numblock){
+							cur.next = cur.next - vblock[pri].numblock;
 							nextblock = 0;
-						}
-						else{
-							cur.next = blockloc - vblock[0].numblock;
-							nextblock = 0;
-						}
-						for(i = 0;i<dataarr[1]->len;i++){
-							if((nextblock+1)-cur.next){				
-								fseeko64(disk[n],cur.next*vblock[1].blocksize,SEEK_SET);
-							}
-							nextblock = cur.next;
-							cur = g_array_index(dataarr[1],DBLOCK,i);
-							fwrite(&cur,vblock[1].blocksize,1,disk[n]);
-						}
-					}
-				}
-				else{
-					if(dataarr[0]->len > 0){
-						cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-						cur.next = cur.next - vblock[0].numblock;
-						nextblock = 0;
+							if(pri)
+							pri = 0;
+							else pri =1;
+						}		
 					}
 					else{
-						cur.next = blockloc - vblock[0].numblock;
-						nextblock = 0;
-					}
-					for(i = 0;i<dataarr[1]->len;i++){
-						if((nextblock+1)-cur.next){				
-							fseeko64(disk[primary[1]],cur.next*vblock[1].blocksize,SEEK_SET);
-						}
+						if((nextblock+1)-cur.next)
+							fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
 						nextblock = cur.next;
-						cur = g_array_index(dataarr[1],DBLOCK,i);
-						fwrite(&cur,vblock[1].blocksize,1,disk[primary[1]]);
+						cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+						fwrite(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+						ind[pri]++;
+						if(cur.next >= vblock[pri].numblock){
+							cur.next = cur.next - vblock[pri].numblock;
+							nextblock = 0;
+							if(pri)
+							pri = 0;
+							else pri =1;
+						}
 					}
 				}
 					
@@ -1049,89 +1021,60 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 							fread(cur.data,1,desiresize,fp);
 							g_array_append_val(dataarr[pri],cur);
 							
-							if(cur.next >= vblock[0].numblock && !pri){
-								cur.next = cur.next - vblock[0].numblock;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
 								nextblock = 0;
-								pri = 1;
+								if(pri)
+									pri = 0;
+								else pri =1;
 							}
-							else if(cur.next >= vblock[1].numblock && pri){
-								cur.next = cur.next - vblock[1].numblock;
-								nextblock = 0;
-								pri = 0;
-							}
-							else ;
 						}while(cur.next);
 						//------------------10 readonly-----------------
 
 						nextblock =0;
 						cur.next = hfentry->sblock;
+						pri = 0;
 						//-------------------------11-------------------------
-						if(isBoth[0]){
-							for(n=0;n<2;n++){
-								nextblock =0;
-								cur.next = hfentry->sblock;
-								for(i = 0;i<dataarr[0]->len;i++){
-									if((nextblock+1)-cur.next)
-										fseeko64(disk[n],cur.next*vblock[0].blocksize,SEEK_SET);
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[0],DBLOCK,i);
-									fwrite(&cur,vblock[0].blocksize,1,disk[n]);
-								}
-							}
+						if(cur.next >= vblock[0].numblock){
+							pri = 1;
+							nextblock = 0;
+							cur.next = cur.next - vblock[0].numblock;
 						}
-						else{
-							nextblock =0;
-							cur.next = hfentry->sblock;
-							for(i = 0;i<dataarr[0]->len;i++){
-								if((nextblock+1)-cur.next)
-									fseeko64(disk[primary[0]],cur.next*vblock[0].blocksize,SEEK_SET);
+						while(ind[0] < dataarr[0]->len || ind[1] < dataarr[1]->len){
+							if(isBoth[pri]){
+								if((nextblock+1)-cur.next){
+									fseeko64(disk[(2*pri)+0],cur.next*vblock[pri].blocksize,SEEK_SET);
+									fseeko64(disk[(2*pri)+1],cur.next*vblock[pri].blocksize,SEEK_SET);
+								}
 								nextblock = cur.next;
-								cur = g_array_index(dataarr[0],DBLOCK,i);
-								fwrite(&cur,vblock[0].blocksize,1,disk[primary[0]]);
-							}
-						}
-						
-				
-						if(isBoth[1]){
-							for(n=2;n<rfosdisk.numdisk;n++){
-								if(dataarr[0]->len > 0){
-									cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-									cur.next = cur.next - vblock[0].numblock;
+								cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+0]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+1]);
+								ind[pri]++;
+								if(cur.next >= vblock[pri].numblock){
+									cur.next = cur.next - vblock[pri].numblock;
 									nextblock = 0;
-								}
-								else{
-									cur.next = hfentry->sblock - vblock[0].numblock;
-									nextblock = 0;
-								}
-								for(i = 0;i<dataarr[1]->len;i++){
-									if((nextblock+1)-cur.next)
-										fseeko64(disk[n],cur.next*vblock[1].blocksize,SEEK_SET);
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[1],DBLOCK,i);
-									fwrite(&cur,vblock[1].blocksize,1,disk[n]);
-								}
-							}
-						}
-						else{
-							if(dataarr[0]->len > 0){
-								cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-								cur.next = cur.next - vblock[0].numblock;
-								nextblock = 0;
+									if(pri)
+										pri = 0;
+									else pri =1;
+								}		
 							}
 							else{
-								cur.next = hfentry->sblock - vblock[0].numblock;
-								nextblock = 0;
-							}
-							for(i = 0;i<dataarr[1]->len;i++){
 								if((nextblock+1)-cur.next)
-									fseeko64(disk[primary[1]],cur.next*vblock[1].blocksize,SEEK_SET);
+									fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
 								nextblock = cur.next;
-								cur = g_array_index(dataarr[1],DBLOCK,i);
-								fwrite(&cur,vblock[1].blocksize,1,disk[primary[1]]);
+								cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+								ind[pri]++;
+								if(cur.next >= vblock[pri].numblock){
+									cur.next = cur.next - vblock[pri].numblock;
+									nextblock = 0;
+									if(pri)
+										pri = 0;
+									else pri =1;
+								}
 							}
 						}
-
-						
 						//-------------------------11-------------------------
 						//Update fe block..... and write back!
 						bypassallocblkpt1:	
@@ -1350,6 +1293,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				//66666666666666666666666666666666666666666666666666666666666666
 						cur.next = hfentry->sblock;
 						nextblock = 0;
+						pri = 0;
 						if(cur.next >= vblock[0].numblock){
 							cur.next = cur.next - vblock[0].numblock;
 							pri = 1;
@@ -1365,17 +1309,13 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 							if(cur.next)
 								g_array_append_val(dataarr[pri],cur);
 
-							if(cur.next >= vblock[0].numblock && !pri){
-								cur.next = cur.next - vblock[0].numblock;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
 								nextblock = 0;
-								pri = 1;
+								if(pri)
+									pri = 0;
+								else pri =1;
 							}
-							else if(cur.next >= vblock[1].numblock && pri){
-								cur.next = cur.next - vblock[1].numblock;
-								nextblock = 0;
-								pri = 0;
-							}
-							else ;
 						}while(cur.next);
 						//-----------------14 readonly----------------
 						if(pri == 1){
@@ -1513,70 +1453,49 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						nextblock = 0;
 						
 						//----------------------15--------------------
-						if(isBoth[0]){
-							for(n=0;n<2;n++){
-								nextblock =0;
-								cur.next = hfentry->sblock;
-								for(i = 0;i<dataarr[0]->len;i++){
-									if((nextblock+1)-cur.next)
-										fseeko64(disk[n],cur.next*vblock[0].blocksize,SEEK_SET);
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[0],DBLOCK,i);
-									fwrite(&cur,vblock[0].blocksize,1,disk[n]);
-								}
-							}
+						pri = 0;
+						if(cur.next >= vblock[0].numblock){
+							pri = 1;
+							nextblock = 0;
+							cur.next = cur.next - vblock[0].numblock;
 						}
-						else{
-							nextblock =0;
-							cur.next = hfentry->sblock;
-							for(i = 0;i<dataarr[0]->len;i++){
-								if((nextblock+1)-cur.next)
-									fseeko64(disk[primary[0]],cur.next*vblock[0].blocksize,SEEK_SET);
+						while(ind[0] < dataarr[0]->len || ind[1] < dataarr[1]->len){
+							if(isBoth[pri]){
+								if((nextblock+1)-cur.next){
+									fseeko64(disk[(2*pri)+0],cur.next*vblock[pri].blocksize,SEEK_SET);
+									fseeko64(disk[(2*pri)+1],cur.next*vblock[pri].blocksize,SEEK_SET);
+								}
 								nextblock = cur.next;
-								cur = g_array_index(dataarr[0],DBLOCK,i);
-								fwrite(&cur,vblock[0].blocksize,1,disk[primary[0]]);
+								cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+0]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+1]);
+								ind[pri]++;
+								if(cur.next >= vblock[pri].numblock){
+									cur.next = cur.next - vblock[pri].numblock;
+									nextblock = 0;
+									if(pri)
+									pri = 0;
+									else pri =1;
+								}
+								
+							}
+							else{
+								if((nextblock+1)-cur.next)
+									fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
+								nextblock = cur.next;
+								cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+								ind[pri]++;
+								if(cur.next >= vblock[pri].numblock){
+									cur.next = cur.next - vblock[pri].numblock;
+									nextblock = 0;
+									if(pri)
+										pri = 0;
+									else pri =1;
+								}
 							}
 						}
 						
-				
-						if(isBoth[1]){
-							for(n=2;n<rfosdisk.numdisk;n++){
-								if(dataarr[0]->len > 0){
-									cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-									cur.next = cur.next - vblock[0].numblock;
-									nextblock = 0;
-								}
-								else{
-									cur.next = hfentry->sblock - vblock[0].numblock;
-									nextblock = 0;
-								}
-								for(i = 0;i<dataarr[1]->len;i++){
-									if((nextblock+1)-cur.next)
-										fseeko64(disk[n],cur.next*vblock[1].blocksize,SEEK_SET);
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[1],DBLOCK,i);
-									fwrite(&cur,vblock[1].blocksize,1,disk[n]);
-								}
-							}
-						}
-						else{
-							if(dataarr[0]->len > 0){
-								cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-								cur.next = cur.next - vblock[0].numblock;
-								nextblock = 0;
-							}
-							else{
-								cur.next = hfentry->sblock - vblock[0].numblock;
-								nextblock = 0;
-							}
-							for(i = 0;i<dataarr[1]->len;i++){
-								if((nextblock+1)-cur.next)
-									fseeko64(disk[primary[1]],cur.next*vblock[1].blocksize,SEEK_SET);
-								nextblock = cur.next;
-								cur = g_array_index(dataarr[1],DBLOCK,i);
-								fwrite(&cur,vblock[1].blocksize,1,disk[primary[1]]);
-							}
-						}
 						//----------------------15--------------------
 						fe.atime = time(NULL);
 						fe.sblock = hfentry->sblock;
@@ -1720,31 +1639,25 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 								break;
 							}
 							
-							if(cur.next >= vblock[0].numblock && !pri){
-								cur.next = cur.next - vblock[0].numblock;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
 								nextblock = 0;
-								pri = 1;
+								if(pri)
+									pri = 0;
+								else pri =1;
 							}
-							else if(cur.next >= vblock[1].numblock && pri){
-								cur.next = cur.next - vblock[1].numblock;
-								nextblock = 0;
-								pri = 0;
-							}
-							else ;
 						}
 						
 						bypassallocblkpt3:
 						cur.next = tempnext;
 						//if tempnext is >= vblock[0].numblock?
-						if(cur.next >= vblock[0].numblock && !pri){
-							cur.next = cur.next - vblock[0].numblock;
-							pri = 1;
+						if(cur.next >= vblock[pri].numblock){
+							cur.next = cur.next - vblock[pri].numblock;
+							nextblock = 0;
+							if(pri)
+								pri = 0;
+							else pri =1;
 						}
-						else if(cur.next >= vblock[1].numblock && pri){
-							cur.next = cur.next - vblock[1].numblock;
-							pri = 0;
-						}
-						else ;
 						nextblock = 0;
 						
 						while(cur.next){
@@ -1754,17 +1667,13 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 							fread(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
 							bitvec[pri][nextblock/8] = bitvec[pri][nextblock/8] & (~bytechk[nextblock%8]);
 							delcnt[pri]++;
-							if(cur.next >= vblock[0].numblock && !pri){
-								cur.next = cur.next - vblock[0].numblock;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
 								nextblock = 0;
-								pri = 1;
+								if(pri)
+									pri = 0;
+								else pri =1;
 							}
-							else if(cur.next >= vblock[1].numblock && pri){
-								cur.next = cur.next - vblock[1].numblock;
-								nextblock = 0;
-								pri = 0;
-							}
-							else ;
 						}
 
 
@@ -1773,72 +1682,48 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						if(!fe.size)goto bypassallocblkpt5;
 						nextblock = 0;
 						cur.next = hfentry->sblock;
+						pri = 0;
 						//------------------19------------------------------
-						if(isBoth[0]){
-							for(n=0;n<2;n++){
-								nextblock = 0;
-								cur.next = hfentry->sblock;
-								for(i = 0;i<dataarr[0]->len;i++){
-									if((nextblock+1)-cur.next){				
-										fseeko64(disk[n],cur.next*vblock[0].blocksize,SEEK_SET);
-									}
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[0],DBLOCK,i);
-									fwrite(&cur,vblock[0].blocksize,1,disk[n]);
-								}
-							}
-						}
-						else{
+						if(cur.next >= vblock[0].numblock){
+							pri = 1;
 							nextblock = 0;
-							cur.next = hfentry->sblock;
-							for(i = 0;i<dataarr[0]->len;i++){
-								if((nextblock+1)-cur.next){				
-									fseeko64(disk[primary[0]],cur.next*vblock[0].blocksize,SEEK_SET);
+							cur.next = cur.next - vblock[0].numblock;
+						}
+						while(ind[0] < dataarr[0]->len || ind[1] < dataarr[1]->len){
+							if(isBoth[pri]){
+								if((nextblock+1)-cur.next){
+									fseeko64(disk[(2*pri)+0],cur.next*vblock[pri].blocksize,SEEK_SET);
+									fseeko64(disk[(2*pri)+1],cur.next*vblock[pri].blocksize,SEEK_SET);
 								}
 							nextblock = cur.next;
-							cur = g_array_index(dataarr[0],DBLOCK,i);
-							fwrite(&cur,vblock[0].blocksize,1,disk[primary[0]]);
-							}
-						}
-						
-						if(isBoth[1]){
-							for(n=2;n<rfosdisk.numdisk;n++){
-								if(dataarr[0]->len > 0){
-									cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-									cur.next = cur.next - vblock[0].numblock;
-									nextblock = 0;
-								}
-								else{
-									cur.next = hfentry->sblock - vblock[0].numblock;
-									nextblock = 0;
-								}
-								for(i = 0;i<dataarr[1]->len;i++){
-									if((nextblock+1)-cur.next)
-										fseeko64(disk[n],cur.next*vblock[1].blocksize,SEEK_SET);
-									nextblock = cur.next;
-									cur = g_array_index(dataarr[1],DBLOCK,i);
-									fwrite(&cur,vblock[1].blocksize,1,disk[n]);
-								}
-							}
-						}
-						else{
-							if(dataarr[0]->len > 0){
-								cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-								cur.next = cur.next - vblock[0].numblock;
+							cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+							fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+0]);
+							fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+1]);
+							ind[pri]++;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
 								nextblock = 0;
+								if(pri)
+									pri = 0;
+								else pri =1;
+								}		
 							}
 							else{
-								cur.next = hfentry->sblock - vblock[0].numblock;
-								nextblock = 0;
-							}
-							for(i = 0;i<dataarr[1]->len;i++){
 								if((nextblock+1)-cur.next)
-									fseeko64(disk[primary[1]],cur.next*vblock[1].blocksize,SEEK_SET);
+									fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
 								nextblock = cur.next;
-								cur = g_array_index(dataarr[1],DBLOCK,i);
-								fwrite(&cur,vblock[1].blocksize,1,disk[primary[1]]);
+								cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+								fwrite(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+								ind[pri]++;
+								if(cur.next >= vblock[pri].numblock){
+									cur.next = cur.next - vblock[pri].numblock;
+									nextblock = 0;
+									if(pri)
+										pri = 0;
+									else pri =1;
+								}
 							}
-						}		
+						}
 						//------------------19------------------------------
 						bypassallocblkpt5:
 						fe.atime = time(NULL);
@@ -2139,73 +2024,48 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						primary[1] = 3;
 
 					//---------------------7-------------------------
-					if(isBoth[0]){
-					for(n = 0;n<2;n++){	
-						cur.next = blockloc;
+					cur.next = blockloc;
+					pri = 0;
+					if(cur.next >= vblock[0].numblock){
+						pri = 1;
 						nextblock = 0;
-						for(i = 0;i<dataarr[0]->len;i++){
-							if((nextblock+1)-cur.next){				
-								fseeko64(disk[n],cur.next*vblock[0].blocksize,SEEK_SET);
+						cur.next = cur.next - vblock[0].numblock;
+					}
+					while(ind[0] < dataarr[0]->len || ind[1] < dataarr[1]->len){
+						if(isBoth[pri]){
+							if((nextblock+1)-cur.next){
+								fseeko64(disk[(2*pri)+0],cur.next*vblock[pri].blocksize,SEEK_SET);
+								fseeko64(disk[(2*pri)+1],cur.next*vblock[pri].blocksize,SEEK_SET);
 							}
 							nextblock = cur.next;
-							cur = g_array_index(dataarr[0],DBLOCK,i);
-							fwrite(&cur,vblock[0].blocksize,1,disk[n]);
-						}
-					}
-				}
-				else{
-					cur.next = blockloc;
-					nextblock = 0;
-					for(i = 0;i<dataarr[0]->len;i++){
-						if((nextblock+1)-cur.next){				
-							fseeko64(disk[primary[0]],cur.next*vblock[0].blocksize,SEEK_SET);
-						}
-						nextblock = cur.next;
-						cur = g_array_index(dataarr[0],DBLOCK,i);
-						fwrite(&cur,vblock[0].blocksize,1,disk[primary[0]]);
-					}
-				}
-				
-				if(isBoth[1]){
-					for(n = 2;n<rfosdisk.numdisk;n++){
-						if(dataarr[0]->len > 0){
-							cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-							cur.next = cur.next - vblock[0].numblock;
-							nextblock = 0;
+							cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+							fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+0]);
+							fwrite(&cur,vblock[pri].blocksize,1,disk[(2*pri)+1]);
+							ind[pri]++;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
+								nextblock = 0;
+								if(pri)
+									pri = 0;
+								else pri =1;
+							}		
 						}
 						else{
-							cur.next = blockloc - vblock[0].numblock;
-							nextblock = 0;
-						}
-						for(i = 0;i<dataarr[1]->len;i++){
-							if((nextblock+1)-cur.next){				
-								fseeko64(disk[n],cur.next*vblock[1].blocksize,SEEK_SET);
-							}
+							if((nextblock+1)-cur.next)
+								fseeko64(disk[primary[pri]],cur.next*vblock[pri].blocksize,SEEK_SET);
 							nextblock = cur.next;
-							cur = g_array_index(dataarr[1],DBLOCK,i);
-							fwrite(&cur,vblock[1].blocksize,1,disk[n]);
+							cur = g_array_index(dataarr[pri],DBLOCK,ind[pri]);
+							fwrite(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
+							ind[pri]++;
+							if(cur.next >= vblock[pri].numblock){
+								cur.next = cur.next - vblock[pri].numblock;
+								nextblock = 0;
+								if(pri)
+									pri = 0;
+								else pri =1;
+							}
 						}
 					}
-				}
-				else{
-					if(dataarr[0]->len > 0){
-						cur = g_array_index(dataarr[0],DBLOCK,(dataarr[0]->len-1));
-						cur.next = cur.next - vblock[0].numblock;
-						nextblock = 0;
-					}
-					else{
-						cur.next = blockloc - vblock[0].numblock;
-						nextblock = 0;
-					}
-					for(i = 0;i<dataarr[1]->len;i++){
-						if((nextblock+1)-cur.next){				
-							fseeko64(disk[primary[1]],cur.next*vblock[1].blocksize,SEEK_SET);
-						}
-						nextblock = cur.next;
-						cur = g_array_index(dataarr[1],DBLOCK,i);
-						fwrite(&cur,vblock[1].blocksize,1,disk[primary[1]]);
-					}
-				}
 					//---------------------7-------------------------
 					bypassallocblkpt2:					
 					fe.valid = 1;
@@ -2376,15 +2236,12 @@ else{
 					fseeko64(disk[primary[pri]],(cur.next)*vblock[pri].blocksize,SEEK_SET);
 					fread(&cur,vblock[pri].blocksize,1,disk[primary[pri]]);
 					delcnt[pri]++;
-					if(cur.next >= vblock[0].numblock && !pri){
-						cur.next = cur.next - vblock[0].numblock;
-						pri = 1;
+					if(cur.next >= vblock[pri].numblock){
+						cur.next = cur.next - vblock[pri].numblock;
+						if(pri)
+							pri = 0;
+						else pri =1;
 					}
-					else if(cur.next >= vblock[1].numblock && pri){
-						cur.next = cur.next - vblock[1].numblock;
-						pri = 0;
-					}
-					else ;
 				}while(cur.next);
 			//--------------------------------------------
 			//update valid properties
