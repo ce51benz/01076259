@@ -12,7 +12,7 @@
 #include<math.h>
 int ready = 0;
 int desiresize;
-pthread_mutex_t lock;
+pthread_mutex_t actoft_lock,rfosoft_lock;
 GHashTable *filetable;
 gchar *bitvec[2];
 GArray *actoft,*rfosoft;
@@ -198,15 +198,16 @@ else{
 		g_ptr_array_sort(arr,(GCompareFunc)strcmpcus);
 		struct stat64 fst;
 		//-------lock--------------
+		pthread_mutex_lock(&actoft_lock);
 		if(!stat64(p->path,&fst)){
 			if(isOpenForRead(fst.st_ino) || isOpenForWrite(fst.st_ino)){
-				err = EAGAIN;goto searchchkpt;
+				err = EAGAIN;pthread_mutex_unlock(&actoft_lock);goto searchchkpt;
 			}
 			else{
 			fp = fopen64(p->path,"wb");
 			if(!fp){
 				if(g_mkdir_with_parents(p->path,0777)){
-					err = ENOENT;goto searchchkpt;
+					err = ENOENT;pthread_mutex_unlock(&actoft_lock);goto searchchkpt;
 				}
 				rmdir(p->path);
 				fp = fopen64(p->path,"wb");
@@ -222,7 +223,7 @@ else{
 			fp = fopen64(p->path,"wb");
 			if(!fp){
 				if(g_mkdir_with_parents(p->path,0777)){
-					err = ENOENT;goto searchchkpt;
+					err = ENOENT;pthread_mutex_unlock(&actoft_lock);goto searchchkpt;
 				}
 				rmdir(p->path);
 				fp = fopen64(p->path,"wb");
@@ -233,15 +234,26 @@ else{
 			ent.mode = 'W';
 			g_array_append_val(actoft,ent);
 		}
+		pthread_mutex_unlock(&actoft_lock);
 		//-------------------------
 		guint32 i = 0;
 		while(i<arr->len){
 			fprintf(fp,"%s",(char*)arr->pdata[i]);
 			i++;
 			if(i<arr->len)fputc(',',fp);
-			if(ferror(fp)){err=errno;fclose(fp);remOpenForWrite(fst.st_ino);goto searchchkpt;}
+			if(ferror(fp)){
+				err=errno;fclose(fp);
+				pthread_mutex_lock(&actoft_lock);
+				remOpenForWrite(fst.st_ino);
+				pthread_mutex_unlock(&actoft_lock);
+				goto searchchkpt;
+			}
 		}
-		fclose(fp);remOpenForWrite(fst.st_ino);err=0;
+		fclose(fp);
+		pthread_mutex_lock(&actoft_lock);
+		remOpenForWrite(fst.st_ino);
+		pthread_mutex_unlock(&actoft_lock);
+		err=0;
 	}
 	else err = ENOENT;
 }
@@ -273,8 +285,9 @@ getput_param *p = (getput_param*)pa;
 		else{
 			
 			//-------lock1--------------
+			pthread_mutex_lock(&rfosoft_lock);
 			if(rfosIsOpenForWrite(p->key)){
-				err = EAGAIN;goto getchkpt;
+				err = EAGAIN;pthread_mutex_unlock(&rfosoft_lock);goto getchkpt;
 			}
 			else{
 				RFOSOFT_ENT rent;
@@ -284,19 +297,31 @@ getput_param *p = (getput_param*)pa;
 				rent.mode = 'R';
  				g_array_append_val(rfosoft,rent);
 			}
+			pthread_mutex_unlock(&rfosoft_lock);
 			//--------------------------
 			FILE *fp;
 			struct stat64 fst;
 			//-------lock2--------------
+			pthread_mutex_lock(&actoft_lock);
 			if(!stat64(p->path,&fst)){
 				if(isOpenForRead(fst.st_ino) || isOpenForWrite(fst.st_ino)){
-					err = EAGAIN;goto getchkpt;
+					err = EAGAIN;
+					pthread_mutex_lock(&rfosoft_lock);					
+					rfosRemOpenForRead(p->key);
+					pthread_mutex_unlock(&rfosoft_lock);
+					pthread_mutex_unlock(&actoft_lock);
+					goto getchkpt;
 				}
 				else{	
 					fp = fopen64(p->path,"wb");
 					if(!fp){
 						if(g_mkdir_with_parents(p->path,0777)){
-							err = ENOENT;rfosRemOpenForRead(p->key);goto getchkpt;
+							err = ENOENT;
+							pthread_mutex_lock(&rfosoft_lock);					
+							rfosRemOpenForRead(p->key);
+							pthread_mutex_unlock(&rfosoft_lock);
+							pthread_mutex_unlock(&actoft_lock);
+							goto getchkpt;
 					}
 					rmdir(p->path);
 					fp = fopen64(p->path,"wb");
@@ -312,7 +337,12 @@ getput_param *p = (getput_param*)pa;
 				fp = fopen64(p->path,"wb");
 				if(!fp){
 					if(g_mkdir_with_parents(p->path,0777)){
-						err = ENOENT;rfosRemOpenForRead(p->key);goto getchkpt;
+						err = ENOENT;
+						pthread_mutex_lock(&rfosoft_lock);					
+						rfosRemOpenForRead(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
+						pthread_mutex_unlock(&actoft_lock);
+						goto getchkpt;
 					}
 					rmdir(p->path);
 					fp = fopen64(p->path,"wb");
@@ -323,6 +353,7 @@ getput_param *p = (getput_param*)pa;
 				ent.mode = 'W';
 				g_array_append_val(actoft,ent);
 			}
+			pthread_mutex_unlock(&actoft_lock);
 			//-------------------------
 
 			//SELECT PRIMARY DISK TO READ FROM
@@ -379,7 +410,13 @@ getput_param *p = (getput_param*)pa;
 								else
 									fclose(disk[primary[1]]);
 							}
-						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
+						pthread_mutex_lock(&actoft_lock);
+						remOpenForWrite(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_lock(&rfosoft_lock);
+						rfosRemOpenForRead(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto getchkpt;}
 					}
 					else{
 						fwrite(cur.data,1,desiresize,fp);
@@ -396,7 +433,13 @@ getput_param *p = (getput_param*)pa;
 								else
 									fclose(disk[primary[1]]);
 							}
-						remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
+						pthread_mutex_lock(&actoft_lock);
+						remOpenForWrite(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_lock(&rfosoft_lock);
+						rfosRemOpenForRead(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto getchkpt;}
 					    }
 					break;
 				}
@@ -415,7 +458,14 @@ getput_param *p = (getput_param*)pa;
 								else
 									fclose(disk[primary[1]]);
 							}
-					remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);goto getchkpt;}
+						pthread_mutex_lock(&actoft_lock);
+						remOpenForWrite(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_lock(&rfosoft_lock);
+						rfosRemOpenForRead(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto getchkpt;
+					}
 				    }
 				if(cur.next >= vblock[pri].numblock){
 					cur.next = cur.next - vblock[pri].numblock;
@@ -463,7 +513,13 @@ getput_param *p = (getput_param*)pa;
 					fclose(disk[primary[1]]);
 			}
 			//------------------------    
-			fclose(fp);remOpenForWrite(fst.st_ino);rfosRemOpenForRead(p->key);	
+			fclose(fp);
+			pthread_mutex_lock(&actoft_lock);
+			remOpenForWrite(fst.st_ino);
+			pthread_mutex_unlock(&actoft_lock);
+			pthread_mutex_lock(&rfosoft_lock);
+			rfosRemOpenForRead(p->key);
+			pthread_mutex_unlock(&rfosoft_lock);
 			err = 0;
 		}
 	}
@@ -503,19 +559,29 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 	//-----------------lock-----------------
 	if(stat64(p->path,&fst))err = ENOENT;
 	else{
-		if(isOpenForWrite(fst.st_ino)){err = EAGAIN;goto putchkpt;}
+		pthread_mutex_lock(&actoft_lock);
+		if(isOpenForWrite(fst.st_ino)){
+			err = EAGAIN;pthread_mutex_unlock(&actoft_lock);goto putchkpt;}
 		AOF_ENT ent;
 		ent.fid = fst.st_ino;
 		ent.mode = 'R';
 		g_array_append_val(actoft,ent);
+		pthread_mutex_unlock(&actoft_lock);
 		//--------------------------------------
 		FILE *fp = fopen64(p->path,"rb");
 				
 			if((hfentry = g_hash_table_lookup(filetable,p->key)) == NULL)
 			{
 				//----------------lockforkey--------------
+				pthread_mutex_lock(&rfosoft_lock);
 				if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
-					err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+					err = EAGAIN;
+					fclose(fp);
+					pthread_mutex_lock(&actoft_lock);					
+					remOpenForRead(fst.st_ino);
+					pthread_mutex_unlock(&actoft_lock);
+					pthread_mutex_unlock(&rfosoft_lock);
+					goto putchkpt;
 				}
 				else{
 					RFOSOFT_ENT rent;
@@ -525,6 +591,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					rent.mode = 'W';
 					g_array_append_val(rfosoft,rent);
 				}
+				pthread_mutex_unlock(&rfosoft_lock);
 				//----------------------------------------
 				for(i=0;i<8;i++)
 					fe.key[i] = p->key[i];
@@ -535,8 +602,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					if(ceil(fe.size*1.0 / desiresize) > vblock[0].free){
 						fclose(fp);
 						err = ENOSPC;
+						pthread_mutex_lock(&actoft_lock);
 						remOpenForRead(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_lock(&rfosoft_lock);
 						rfosRemOpenForWrite(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
 						goto putchkpt;
 					}
 				}
@@ -544,8 +615,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					if(ceil(fe.size*1.0 / desiresize) > (vblock[0].free+vblock[1].free)){
 						fclose(fp);
 						err = ENOSPC;
+						pthread_mutex_lock(&actoft_lock);
 						remOpenForRead(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_lock(&rfosoft_lock);
 						rfosRemOpenForWrite(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
 						goto putchkpt;
 					}
 				}
@@ -554,7 +629,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				if(fe.size == 0){ //if file is size 0 byte no block is allocated.
 					fe.sblock=0;
 					fclose(fp);
+					pthread_mutex_lock(&actoft_lock);
 					remOpenForRead(fst.st_ino);
+					pthread_mutex_unlock(&actoft_lock);
 					for(n = 0;n<rfosdisk.numdisk;n++)
 						disk[n] = fopen64(rfosdisk.disk[n],"rb+");
 					if(disk[0]&&disk[1]){
@@ -714,8 +791,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				g_array_append_val(dataarr[0],cur);
 				freeblkrwchkpt:
 				fclose(fp);
+				pthread_mutex_lock(&actoft_lock);
 				remOpenForRead(fst.st_ino);
-				
+				pthread_mutex_unlock(&actoft_lock);
 				fe.sblock = blockloc;
 
 				//-----------------------------------------------
@@ -948,7 +1026,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					else fclose(disk[primary[1]]);
 				}
 				/////-------------------5------------------------------
+				pthread_mutex_lock(&rfosoft_lock);
 				rfosRemOpenForWrite(p->key);
+				pthread_mutex_unlock(&rfosoft_lock);
 			}
 		else
 			{ 
@@ -963,8 +1043,14 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					fe.size = fst.st_size;
 					fe.key[8] = '\0';
 					//----------------lockforkey--------------
+					pthread_mutex_lock(&rfosoft_lock);
 					if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
-						err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+						err = EAGAIN;fclose(fp);
+						pthread_mutex_lock(&actoft_lock);
+						remOpenForRead(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto putchkpt;
 					}
 					else{
 						RFOSOFT_ENT rent;
@@ -974,6 +1060,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						rent.mode = 'W';
  						g_array_append_val(rfosoft,rent);
 					}
+					pthread_mutex_unlock(&rfosoft_lock);
 					//----------------------------------------
 					//Check for avail block.
 					if(ceil(hfentry->size*1.0/desiresize) == ceil(fe.size*1.0/desiresize)){
@@ -1105,7 +1192,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					else fclose(disk[primary[1]]);
 					}
 					//-----------------------12-------------------------------
+						pthread_mutex_lock(&rfosoft_lock);						
 						rfosRemOpenForWrite(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
 						g_printf("Case htb found with eq block size req\n");	
 						g_printf("KEY => %s\n",fe.key);
 						g_printf("SIZE => %d\n",fe.size);
@@ -1120,13 +1209,25 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						if(rfosdisk.numdisk < 2){
 							if((ceil(fe.size*1.0 / desiresize)-ceil(hfentry->size*1.0/desiresize)) > vblock[0].free){
 								fclose(fp);err = ENOSPC;
-								remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
+								pthread_mutex_lock(&actoft_lock);
+								remOpenForRead(fst.st_ino);
+								pthread_mutex_unlock(&actoft_lock);
+								pthread_mutex_lock(&rfosoft_lock);
+								rfosRemOpenForWrite(p->key);
+								pthread_mutex_unlock(&rfosoft_lock);
+								goto putchkpt;			
 							}
 						}
 						else{
 							if((ceil(fe.size*1.0 / desiresize)-ceil(hfentry->size*1.0/desiresize)) > (vblock[0].free+vblock[1].free)){
 								fclose(fp);err = ENOSPC;
-								remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;			
+								pthread_mutex_lock(&actoft_lock);
+								remOpenForRead(fst.st_ino);
+								pthread_mutex_unlock(&actoft_lock);
+								pthread_mutex_lock(&rfosoft_lock);
+								rfosRemOpenForWrite(p->key);
+								pthread_mutex_unlock(&rfosoft_lock);
+								goto putchkpt;			
 							}
 						}
 
@@ -1562,7 +1663,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						}
 
 						//--------------------16--------------------
+						pthread_mutex_lock(&rfosoft_lock);
 						rfosRemOpenForWrite(p->key);
+						pthread_mutex_unlock(&rfosoft_lock);
 						hfentry->size = fe.size;
 						hfentry->atime = fe.atime;
 						g_printf("Case htb found with more block size req\n");	
@@ -1791,8 +1894,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						else fclose(disk[primary[1]]);
 					}
 					//----------------------------20----------------	
-										
+					pthread_mutex_lock(&rfosoft_lock);			
 					rfosRemOpenForWrite(p->key);
+					pthread_mutex_unlock(&rfosoft_lock);
 					g_printf("Case htb found with less block size req\n");	
 					g_printf("KEY => %s\n",fe.key);
 					g_printf("SIZE => %d\n",fe.size);
@@ -1800,14 +1904,23 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					g_printf("SBLOCK => %d\n",fe.sblock);
 					g_printf("VALID => %d\n",fe.valid);				
 					}
-					fclose(fp);remOpenForRead(fst.st_ino);			
+					fclose(fp);
+					pthread_mutex_lock(&actoft_lock);
+					remOpenForRead(fst.st_ino);
+					pthread_mutex_unlock(&actoft_lock);			
 				}
 				else{
 				//Case file not valid
 				//Do something similar case HTB not found but this time you can write desired file entry to desired location faster. 
 					//----------------lockforkey--------------
+					pthread_mutex_lock(&rfosoft_lock);
 					if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
-						err = EAGAIN;fclose(fp);remOpenForRead(fst.st_ino);goto putchkpt;
+						err = EAGAIN;fclose(fp);
+						pthread_mutex_lock(&actoft_lock);
+						remOpenForRead(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
+						pthread_mutex_unlock(&rfosoft_lock);
+						goto putchkpt;
 					}
 					else{
 						RFOSOFT_ENT rent;
@@ -1817,6 +1930,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						rent.mode = 'W';
  						g_array_append_val(rfosoft,rent);
 					}
+					pthread_mutex_unlock(&rfosoft_lock);
 					//----------------------------------------					
 					for(i=0;i<8;i++)
 						fe.key[i] = p->key[i];
@@ -1825,19 +1939,33 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					if(rfosdisk.numdisk < 2){					
 						if(ceil(fe.size*1.0 / desiresize) > vblock[0].free){
 							fclose(fp);err = ENOSPC;
-							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;
+							pthread_mutex_lock(&actoft_lock);
+							remOpenForRead(fst.st_ino);
+							pthread_mutex_unlock(&actoft_lock);
+							pthread_mutex_lock(&rfosoft_lock);
+							rfosRemOpenForWrite(p->key);
+							pthread_mutex_unlock(&rfosoft_lock);
+							goto putchkpt;
 						}
 					}
 					else{
 						if(ceil(fe.size*1.0 / desiresize) > (vblock[0].free+vblock[1].free)){
 							fclose(fp);err = ENOSPC;
-							remOpenForRead(fst.st_ino);rfosRemOpenForWrite(p->key);goto putchkpt;
+							pthread_mutex_lock(&actoft_lock);
+							remOpenForRead(fst.st_ino);
+							pthread_mutex_unlock(&actoft_lock);
+							pthread_mutex_lock(&rfosoft_lock);
+							rfosRemOpenForWrite(p->key);
+							pthread_mutex_unlock(&rfosoft_lock);							
+							goto putchkpt;
 						}
 					}
 					if(fe.size == 0){
 						fe.sblock=0;
 						fclose(fp);
+						pthread_mutex_lock(&actoft_lock);
 						remOpenForRead(fst.st_ino);
+						pthread_mutex_unlock(&actoft_lock);
 						for(n = 0;n<rfosdisk.numdisk;n++)
 							disk[n] = fopen64(rfosdisk.disk[n],"rb+");
 						if(disk[0]&&disk[1]){
@@ -1999,8 +2127,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				g_array_append_val(dataarr[0],cur);
 				freeblkrwchkpt2:
 				fclose(fp);
+				pthread_mutex_lock(&actoft_lock);
 				remOpenForRead(fst.st_ino);
-				
+				pthread_mutex_unlock(&actoft_lock);
 				fe.sblock = blockloc;
 				
 					//---------------------6-------------------------
@@ -2131,8 +2260,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					g_printf("ATIME => %ld\n",fe.atime);
 					g_printf("SBLOCK => %d\n",fe.sblock);
 					g_printf("VALID => %d\n",fe.valid);
-
+					pthread_mutex_lock(&rfosoft_lock);
 					rfosRemOpenForWrite(p->key);
+					pthread_mutex_unlock(&rfosoft_lock);
 				}
 			}
 	    		err = 0;
@@ -2189,8 +2319,9 @@ else{
 		if(!fentry->valid)err = ENOENT; // if file entry is already invalid return ENOENT
 		else{
 			//----------------lockforkey--------------
+			pthread_mutex_lock(&rfosoft_lock);
 			if(rfosIsOpenForRead(p->key)||rfosIsOpenForWrite(p->key)){
-				err = EAGAIN;goto remchkpt;
+				err = EAGAIN;pthread_mutex_unlock(&rfosoft_lock);goto remchkpt;
 			}
 			else{
 				RFOSOFT_ENT rent;
@@ -2200,6 +2331,7 @@ else{
 				rent.mode = 'W';
  				g_array_append_val(rfosoft,rent);
 			}
+			pthread_mutex_unlock(&rfosoft_lock);
 			//----------------------------------------
 		
 			//********************************************
@@ -2308,7 +2440,9 @@ else{
 				else fclose(disk[primary[1]]);
 			}
 
+			pthread_mutex_lock(&rfosoft_lock);
 			rfosRemOpenForWrite(p->key);
+			pthread_mutex_unlock(&rfosoft_lock);
 			err = 0;
 		}		
 	}
@@ -3831,7 +3965,8 @@ rfosdisk.disk = g_new(gchar *,argc -1);
 		rfosdisk.disk[2] = g_strdup(argv[3]);
 		rfosdisk.disk[3] = g_strdup(argv[4]);
 	}
-	pthread_mutex_init(&lock,NULL);
+	pthread_mutex_init(&actoft_lock,NULL);
+	pthread_mutex_init(&rfosoft_lock,NULL);
     /* Initialize daemon main loop */
     GMainLoop *loop = g_main_loop_new (NULL, FALSE);
     /* Attempt to register the daemon with 'kmitl.ce.os.RFOS' name on the bus */
