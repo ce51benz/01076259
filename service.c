@@ -12,7 +12,7 @@
 #include<math.h>
 int ready = 0;
 int desiresize;
-pthread_mutex_t actoft_lock,rfosoft_lock;
+pthread_mutex_t actoft_lock,rfosoft_lock,vblock_lock,ftb_lock;
 GHashTable *filetable;
 gchar *bitvec[2];
 GArray *actoft,*rfosoft;
@@ -867,13 +867,18 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 				bypassallocblkpt0:
 				fe.valid = 1;
 				fe.atime = time(NULL);
+				pthread_mutex_lock(&vblock_lock);
 				vblock[0].free = vblock[0].free - dataarr[0]->len;
 				if(rfosdisk.numdisk > 2)
 					vblock[1].free = vblock[1].free - dataarr[1]->len;
+				pthread_mutex_unlock(&vblock_lock);
 				//FILE LOCATION FOR AVAIL FILE ENT BLOCK AND WRITE VCB BACK
 				if(!vblock[0].inv_file){
-					if(ceil(((vblock[0].numfile-vblock[0].inv_file)*1.0*sizeof(FILE_ENT))/vblock[0].blocksize) < vblock[0].file_ent_bl)
+					if(ceil(((vblock[0].numfile-vblock[0].inv_file)*1.0*sizeof(FILE_ENT))/vblock[0].blocksize) < vblock[0].file_ent_bl){
+					pthread_mutex_lock(&vblock_lock);
 					vblock[0].numfile = vblock[0].numfile+1;
+					pthread_mutex_unlock(&vblock_lock);
+		}
 					else{
 						if(isBoth[0]){
 							for(n = 0;n<2;n++)
@@ -929,7 +934,9 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					entry->sblock = fe.sblock;
 					entry->valid = fe.valid;
 					entry->fileno = vblock[0].numfile-1;
+					pthread_mutex_lock(&ftb_lock);
 					g_hash_table_insert(filetable,entry->key,entry);
+					pthread_mutex_unlock(&ftb_lock);
 				}
 				else{
 					/* TO EDIT */
@@ -942,19 +949,24 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					while(g_hash_table_iter_next(&iter,&key,&value)){
 						fentry = (FILE_ENT_INMEM*)value;
 						if(!fentry->valid){
+							pthread_mutex_lock(&ftb_lock);
 							g_hash_table_remove(filetable,fentry->key);
+							pthread_mutex_unlock(&ftb_lock);
 							g_free(fentry->key);
 							fentry->key = g_strdup(fe.key);
 							fentry->size = fe.size;
 							fentry->atime = fe.atime;
 							fentry->sblock = fe.sblock;
 							fentry->valid = 1;
-							g_hash_table_insert(filetable,fentry->key,fentry);					
+							pthread_mutex_lock(&ftb_lock);
+							g_hash_table_insert(filetable,fentry->key,fentry);
+							pthread_mutex_unlock(&ftb_lock);					
 							break;
 						}
 					}
+					pthread_mutex_lock(&vblock_lock);
 					vblock[0].inv_file = vblock[0].inv_file - 1;
-
+					pthread_mutex_unlock(&vblock_lock);
 					/////-------------------4------------------------------
 					if(isBoth[0]){		
 						for(n = 0;n<2;n++){
@@ -1612,7 +1624,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						fe.atime = time(NULL);
 						fe.sblock = hfentry->sblock;
 						fe.valid = 1;
-						
+						pthread_mutex_lock(&vblock_lock);
 						if(hfentry->size != 0){
 							vblock[0].free = vblock[0].free - blockwrct[0];
 							if(rfosdisk.numdisk > 2)
@@ -1625,7 +1637,7 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 							if(rfosdisk.numdisk > 2)
 								vblock[1].free = vblock[1].free - dataarr[1]->len;
 						}
-						
+						pthread_mutex_unlock(&vblock_lock);
 						//--------------------16--------------------
 						if(isBoth[0]){
 							for(n = 0;n<2;n++){
@@ -1847,12 +1859,12 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 						else{
 							fe.sblock = hfentry->sblock = 0;
 						}
-					
+					pthread_mutex_lock(&vblock_lock);
 					if(delcnt[0] != 0)
 						vblock[0].free = vblock[0].free + delcnt[0];
 					if(delcnt[1] != 0)
 						vblock[1].free = vblock[1].free + delcnt[1];
-					
+					pthread_mutex_unlock(&vblock_lock);
 						hfentry->size = fe.size;
 						hfentry->atime = fe.atime;
 
@@ -2211,11 +2223,13 @@ dataarr[1] = g_array_new(TRUE,FALSE,sizeof(DBLOCK));
 					fe.valid = 1;
 					fe.atime = time(NULL);
 				
+					pthread_mutex_lock(&vblock_lock);
 					vblock[0].free = vblock[0].free - dataarr[0]->len;
 					vblock[0].inv_file = vblock[0].inv_file - 1;
 					
 					if(dataarr[1]->len > 0)
 						vblock[1].free = vblock[1].free - dataarr[1]->len;
+					pthread_mutex_unlock(&vblock_lock);					
 					hfentry->size = fe.size;
 					hfentry->atime = fe.atime;
 					hfentry->sblock = fe.sblock;
@@ -2399,11 +2413,11 @@ else{
 			fe.valid = 0;fentry->valid = 0;
 	
 			//write data back to disk
-			
+			pthread_mutex_lock(&vblock_lock);
 			vblock[0].inv_file++;vblock[0].free+=delcnt[0];
 			if(rfosdisk.numdisk > 2)
 				vblock[1].free+=delcnt[1];
-			
+			pthread_mutex_unlock(&vblock_lock);
 			if(isBoth[0])
 			for(i = 0;i<2;i++){
 				fseeko64(disk[i],0,SEEK_SET);
@@ -2578,14 +2592,12 @@ for(n = 0;n<rfosdisk.numdisk;n++){
 	
 }
 
-///    1   1 
-//     d1  d0	
 
-//1111
 for(n = 0;n < rfosdisk.numdisk;n++)
 {
+	stat64(rfosdisk.disk[n],&s);
 	fread(&vblock[n/2],sizeof(VCB),1,disk[n]);
-	if(vblock[n/2].numblock != 0) pass = pass | bytechk[7-n];
+	if(vblock[n/2].numblock == s.st_size/1024) pass = pass | bytechk[7-n];
 }
 
 	if(pass == 0 && rfosdisk.numdisk <=2){ // case both disks has no data
@@ -3873,71 +3885,30 @@ for(n = 0;n < rfosdisk.numdisk;n++)
 	      //if all disks are success to read,default is read data from disk0
               // if disk 2-3 are add read it also.
 	readdatapt:
-	g_printf("FILE SYSTEM DETAIL....\n");
-	g_printf("DISK NO:%d\n",vblock[0].diskno);
-	g_printf("BLOCK SIZE:%d\n",vblock[0].blocksize);
-	g_printf("NUMBLOCK:%d\n",vblock[0].numblock);
-	g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock[0].bitvec_bl);
-	g_printf("FILE ENTRY BLOCK COUNT:%d\n",vblock[0].file_ent_bl);
-	g_printf("FREE:%d\n",vblock[0].free);
-	g_printf("FILE COUNT:%d\n",vblock[0].numfile);
-	g_printf("INVALID FILE:%d\n",vblock[0].inv_file);
 	bitvec[0] = g_new(gchar,vblock[0].bitvec_bl*vblock[0].blocksize);
 	fseeko64(disk[0],vblock[0].blocksize,SEEK_SET);
 	fread(bitvec[0],1,vblock[0].bitvec_bl*vblock[0].blocksize,disk[0]);
-	j=0;
-	guint32 bituse=0;
-	for(i = 0;;i++){
-		for(k=0;k<8;k++){
-			if(j>=vblock[0].numblock)goto filerdrchkpt;
-			if((bitvec[0][i] & bytechk[k]) == bytechk[k])bituse++;
-			j++;
-		}
-	}
-	filerdrchkpt:
-	g_printf("NUM OF BLOCK USED:%d\n",bituse);
+	
 	FILE_ENT fe;
 	FILE_ENT_INMEM *entry;
-	g_printf("READ FILES:%d\n",vblock[0].numfile);
 	guint feoff = vblock[0].bitvec_bl+1;
 	fseeko64(disk[0],feoff*vblock[0].blocksize,SEEK_SET);
 	for(i=0;i<vblock[0].numfile;i++){
 		fread(&fe,sizeof(FILE_ENT),1,disk[0]);
 		entry = g_new(FILE_ENT_INMEM,1);
 		entry->key = g_strdup(fe.key);
-		g_printf("KEY => %s\n",entry->key);
 		entry->size = fe.size;
-		g_printf("SIZE => %d\n",entry->size);
 		entry->atime = fe.atime;
 		entry->sblock = fe.sblock;
 		entry->valid = fe.valid;
-		g_printf("ATIME => %ld\n",entry->atime);
-		g_printf("SBLOCK => %d\n",entry->sblock);
-		g_printf("VALID => %d\n",entry->valid);
 		entry->fileno = i;
-
 		g_hash_table_insert(filetable,entry->key,entry);
 	}
 	//read disk2-3 if have
 	if(rfosdisk.numdisk>2){
-		g_printf("DISK NO:%d\n",vblock[1].diskno);
-		g_printf("BLOCK SIZE:%d\n",vblock[1].blocksize);
-		g_printf("NUMBLOCK:%d\n",vblock[1].numblock);
-		g_printf("BIT VECTOR BLOCK COUNT:%d\n",vblock[1].bitvec_bl);
-		g_printf("FREE:%d\n",vblock[1].free);
 		bitvec[1] = g_new(gchar,vblock[1].bitvec_bl*vblock[1].blocksize);
 		fseeko64(disk[2],vblock[1].blocksize,SEEK_SET);
 		fread(bitvec[1],1,vblock[1].bitvec_bl*vblock[1].blocksize,disk[2]);
-		j=0;bituse=0;
-		for(i = 0;;i++){
-			for(k=0;k<8;k++){
-				if(j>=vblock[1].numblock)goto filerdrchkpt1;
-				if((bitvec[1][i] & bytechk[k]) == bytechk[k])bituse++;
-				j++;
-			}
-		}
-	filerdrchkpt1:
-	g_printf("NUM OF BLOCK USED:%d\n",bituse);
 	}
 }
 
@@ -3977,6 +3948,8 @@ rfosdisk.disk = g_new(gchar *,argc -1);
 	}
 	pthread_mutex_init(&actoft_lock,NULL);
 	pthread_mutex_init(&rfosoft_lock,NULL);
+	pthread_mutex_init(&vblock_lock,NULL);
+	pthread_mutex_init(&ftb_lock,NULL);
     /* Initialize daemon main loop */
     GMainLoop *loop = g_main_loop_new (NULL, FALSE);
     /* Attempt to register the daemon with 'kmitl.ce.os.RFOS' name on the bus */
